@@ -49,7 +49,9 @@ It leaves catchlights, reflections, sun through leaves and other highlights alon
 
 Small scans get a more careful pass. Under about 40 MP, a face or a sign in the distance can be the same size as a speck of dust, so it only takes spots that are clearly dust and leaves anything bigger or softer alone.
 
-It was trained on about 180 film scans and 90 digital photos, so it's seen a lot of dust, and a lot of things that only look like dust.
+It also looks at the whole picture. A small network checks every spot in the context of the photo, so a speck it's sure is dust gets taken even where the rules hesitated, and a heal it's sure is part of the picture is left.
+
+It was trained on about 180 film scans, 90 digital photos and 2,500 public-domain photos with simulated dust, so it's seen a lot of dust, and a lot of things that only look like dust.
 
 ## How to use it
 

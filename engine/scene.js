@@ -297,10 +297,12 @@ async function score(img, W, H, C, marks, tick, keep) {
 }
 
 // ---- the second opinion (pipeline.js, on the first pass's marks, before anything is healed) ---------------------
-// A heal the model is sure is picture (logit <= scene_veto) is left; a compact mark it is sure is dust (logit >=
-// scene_add, not on the frame, the print or the zone) is healed. r1's core and mask are edited in place, the way
+// A heal the model is sure is picture (logit <= scene_veto) is left; a compact speck it is sure is dust (logit >=
+// scene_add, not on the frame, the print or the zone, on scans of scene_add_mp or more) is healed. r1's core and mask are edited in place, the way
 // Claude's look did in 1.8.38. Returns the spots left as picture (the second pass leaves them alone too).
-const addable = (m) => m.kind !== "hair/fibre" && (m.area || 0) <= (m.kind === "soft" ? 2500 : 400);
+// adds are for compact specks only: soft blobs, hairs and long thin marks go by the engine's own rules (m2 healed a
+// wire crossing and a plant stem as dust)
+const addable = (m) => (m.kind === "speck" || m.kind === "dust") && (m.area || 0) <= 400 && (m.length || 0) <= 3 * Math.max(1, m.width || 1);
 
 async function apply(img, W, H, C, r1, P, log, tick) {
   const out = { vetoed: 0, added: 0, protect: [], scored: 0, ms: 0 };
@@ -312,11 +314,13 @@ async function apply(img, W, H, C, r1, P, log, tick) {
   if (!lg) return out;
   out.scored = marks.length;
   const vetoes = [], adds = [];
+  // no adds on very small scans: below scene_add_mp the model hasn't seen enough (it healed a 0.3 MP JPEG's blocks)
+  const addsOn = Math.max((W * H) / 1e6, P.res_scan_mp || 0) >= P.scene_add_mp;
   for (let i = 0; i < marks.length; i++) {
     const m = marks[i];
     m.scene = lg[i];
     if (m.verdict === "defect" && lg[i] <= P.scene_veto) vetoes.push(m);
-    else if (m.verdict === "keep-photo" && lg[i] >= P.scene_add && addable(m) && !m.frame && !m.print && !m.zone) adds.push(m);
+    else if (addsOn && m.verdict === "keep-photo" && lg[i] >= P.scene_add && addable(m) && !m.frame && !m.print && !m.zone) adds.push(m);
   }
   const F = require("./filters");
   const { core, mask, outside } = r1;

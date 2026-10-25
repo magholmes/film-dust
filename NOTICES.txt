@@ -53,3 +53,8 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 Adobe UXP hybrid plugin SDK
 The Photoshop addon is compiled against Adobe's UXP hybrid plugin SDK headers (Copyright Adobe, used under Adobe's
 license). They are not included in this repository; see native/uxp-sdk/README.md.
+
+Scene model
+engine/scene_weights.js holds a small network built on torchvision's MobileNetV3-small ImageNet weights (torchvision,
+BSD 3-Clause License, Copyright (c) Soumith Chintala 2016). It was trained on simulated dust laid over public-domain
+and CC0 photographs from Wikimedia Commons (none of them are included here) and on labels of the author's own scans.

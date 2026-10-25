@@ -25,7 +25,7 @@ const DEFAULTS = {
   // on the border 4-6: Man's two on his top border stay healed)
   frame_guard: true, frame_ring: 0.4, frame_margin: 4, frame_area: 200, frame_width: 8,
   polarity_need: 15, polarity_need_mp: 24, polarity_need_min: 5, polarity_lead: 3,
-  scene: true, scene_veto: -1.0, scene_add: 3.0, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
+  scene: true, scene_veto: -2.0, scene_add: 4.0, scene_add_mp: 1.5, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
   paper_white: 0.75, detail_max: 1.2, tex_min: 0.45, detail_crisp: 0.9, detail_gain: 1.2, broad_min: 0.3,
   // taught by Magnus's answers (2026-10-16): strong specks beside dark edges, strong crisp specks on skin
   // and the strength a lone hair needs
