@@ -23,7 +23,8 @@ const DEFAULTS = {
   // res_ref_mp; pieces of print and rims are 600-1,800): ring_range is relative to the mark's own contrast, so a faint
   // speck on a grainy border reads high too; and frame_width px wide or more (print and rims 20-36 at res_ref_mp, a hair
   // on the border 4-6: Man's two on his top border stay healed)
-  frame_guard: true, frame_ring: 0.4, frame_margin: 4, frame_area: 200, frame_width: 8, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
+  frame_guard: true, frame_ring: 0.4, frame_margin: 4, frame_area: 200, frame_width: 8,
+  polarity_need: 15, polarity_need_mp: 24, polarity_need_min: 5, polarity_lead: 3, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
   paper_white: 0.75, detail_max: 1.2, tex_min: 0.45, detail_crisp: 0.9, detail_gain: 1.2, broad_min: 0.3,
   // taught by Magnus's answers (2026-10-16): strong specks beside dark edges, strong crisp specks on skin
   // and the strength a lone hair needs

@@ -2111,17 +2111,23 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
   const ctx = { img, C: nC, stride: C, Y, W, H, G, outside, p, gradCal, box, cache, rgbAt, E1, E25, G3, log, tick, timing: !!hooks.timing, protect: opts.protect || null, subject };
   const pols = p.polarity === "bright" ? [true] : p.polarity === "dark" ? [false] : [true, false];
   const results = new Map();
+  // auto: dark wins only with need(nb) strong isolated marks, nb being bright's: max(15, 2 nb) on scans of 24 MP and
+  // up; on smaller scans fewer strong marks exist at all, so the 15 shrinks with the scan's size (never below 5) and
+  // dark must also beat bright by 3 (slides of 6 MP showed 7-25 strong dark marks and 0-4 bright; negatives at most
+  // 4 dark with no bright). Judged by the original scan's size, like the small-scan rules.
+  const scanMpPol = Math.max((W * H) / 1e6, p.res_scan_mp || 0);
+  const darkNeedOf = (nb) => Math.max(Math.max(p.polarity_need_min, p.polarity_need * Math.min(1, scanMpPol / p.polarity_need_mp)), 2 * nb, scanMpPol < p.polarity_need_mp ? nb + p.polarity_lead : 0);
   for (const b of pols) {
     stage(b ? "white" : "black");
-    // auto: dark wins only with max(15, 2 x bright's) strong isolated marks; find() stops early when it can't
-    ctx.darkNeed = !b && p.polarity === "auto" && p.polarity_stop !== false && results.has(true) ? Math.max(15, 2 * results.get(true).strong) : 0;
+    // find() stops judging dark early when it can't reach the need
+    ctx.darkNeed = !b && p.polarity === "auto" && p.polarity_stop !== false && results.has(true) ? darkNeedOf(results.get(true).strong) : 0;
     results.set(b, await find(ctx, b));
     ctx.darkNeed = 0;
   }
   let use;
   if (p.polarity === "auto" && results.size === 2) {
     const nb = results.get(true).strong, nd = results.get(false).strong;
-    use = nd >= Math.max(15, 2 * nb) ? [false] : [true];
+    use = nd >= darkNeedOf(nb) ? [false] : [true];
     log(`auto polarity: strong isolated bright=${nb} dark${results.get(false).stopped ? " at most" : ""}=${nd} -> ${use.map((b) => (b ? "bright" : "dark"))}`);
   } else use = [...results.keys()];
   for (const b of results.keys()) if (!use.includes(b)) results.get(b).maps = null;
