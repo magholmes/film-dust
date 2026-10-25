@@ -63,10 +63,14 @@ const photoshop = {
     getPixels: async ({ sourceBounds: b }) => {
       const w = b.right - b.left, h = b.bottom - b.top, out = new Uint16Array(w * h * C);
       for (let y = 0; y < h; y++) out.set(img.subarray(((b.top + y) * W + b.left) * C, ((b.top + y) * W + b.right) * C), y * w * C);
-      return { imageData: imageData(out, w, h, C), sourceBounds: b };
+      // MOCK_PROFILE=<name>: the scan reports a profile Photoshop then refuses when handed it back (-26120)
+      return { imageData: Object.assign(imageData(out, w, h, C), process.env.MOCK_PROFILE ? { colorProfile: process.env.MOCK_PROFILE } : {}), sourceBounds: b };
     },
     getSelection: async ({ sourceBounds: b }) => ({ imageData: imageData(new Uint8Array((b.right - b.left) * (b.bottom - b.top)), b.right - b.left, b.bottom - b.top, 1), sourceBounds: b }),
-    createImageDataFromBuffer: async (buf, o) => imageData(buf, o.width, o.height, o.components),
+    createImageDataFromBuffer: async (buf, o) => {
+      if (process.env.MOCK_PROFILE && o.colorProfile === process.env.MOCK_PROFILE) throw new Error("Photoshop Error. Code: -26120. Message: Unknown color profile");
+      return imageData(buf, o.width, o.height, o.components);
+    },
     putPixels: async (o) => {
       calls.push("putPixels");
       if (!o.layerID) throw new Error("putPixels without a layer");

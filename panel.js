@@ -108,6 +108,7 @@ async function readWorking(doc, k, onFrac, tick) {
       out.C = id.components;
       out.colorSpace = id.colorSpace;
       out.colorProfile = id.colorProfile;
+      try { out.docProfile = doc.colorProfileName; } catch (e) { out.docProfile = undefined; }   // untagged: no name
       out.img = new Uint16Array(Wd * Hd * out.C);
     }
     const data = await id.getData({ chunky: true, fullRange: true });
@@ -203,7 +204,41 @@ async function putMaskStrips(maskW, src, put, tick, budget = 32e6) {
 }
 
 async function maskImageData(m8, W, H) {
-  return imaging.createImageDataFromBuffer(m8, { width: W, height: H, components: 1, chunky: true, colorSpace: "Grayscale", colorProfile: "Gray Gamma 2.2" });
+  const opts = { width: W, height: H, components: 1, chunky: true, colorSpace: "Grayscale" };
+  if (maskImageData.plain) return imaging.createImageDataFromBuffer(m8, opts);
+  try { return await imaging.createImageDataFromBuffer(m8, Object.assign({ colorProfile: "Gray Gamma 2.2" }, opts)); } catch (e) {
+    if (!profileError(e)) throw e;
+    maskImageData.plain = true;   // a host without that profile: masks need none
+    return imaging.createImageDataFromBuffer(m8, opts);
+  }
+}
+
+// Photoshop reports a scan's colour profile when it reads the pixels but can refuse that name when it is handed back
+// (-26120 "Unknown color profile": a scanner's or an old file's embedded profile, an untagged document). The scan's
+// pixels go back with the profile they came with, else the document's own, else none named, else the standard one for
+// the colour space; the first that works is kept for the rest of the run.
+const profileError = (e) => /profile|-26120/i.test(String((e && e.message) || e));
+const STANDARD_PROFILE = { RGB: "sRGB IEC61966-2.1", Grayscale: "Gray Gamma 2.2" };
+async function putScanPixels(src, buf, width, height, put) {
+  const base = { width, height, components: src.C, chunky: true, colorSpace: src.colorSpace, fullRange: true };
+  const tries = src.profileChoice !== undefined ? [src.profileChoice]
+    : [src.colorProfile, src.docProfile, null, STANDARD_PROFILE[src.colorSpace]].filter((p, i, a) => p !== undefined && p !== "" && a.indexOf(p) === i);
+  let last = null;
+  for (const p of tries) {
+    let pix = null;
+    try {
+      pix = await imaging.createImageDataFromBuffer(buf, p === null ? base : Object.assign({ colorProfile: p }, base));
+      await put(pix);
+      src.profileChoice = p;
+      return;
+    } catch (e) {
+      if (!profileError(e)) throw e;
+      last = e;
+    } finally {
+      if (pix) pix.dispose();
+    }
+  }
+  throw last;
 }
 
 function layerBuffer(src, data) {
@@ -226,9 +261,7 @@ async function writeLayer(doc, src, mask, tick) {
   const { W, H, C } = src;
   const layer = await newMaskedLayer(doc);
   writeLayer.last = layer;
-  const pix = await imaging.createImageDataFromBuffer(layerBuffer(src, src.img), { width: W, height: H, components: C, chunky: true, colorSpace: src.colorSpace, colorProfile: src.colorProfile, fullRange: true });
-  await imaging.putPixels({ layerID: layer.id, imageData: pix, replace: true, commandName: "dust removed" });
-  pix.dispose();
+  await putScanPixels(src, layerBuffer(src, src.img), W, H, (pix) => imaging.putPixels({ layerID: layer.id, imageData: pix, replace: true, commandName: "dust removed" }));
   await putMaskStrips(mask, src, (id, top) => imaging.putLayerMask({ layerID: layer.id, imageData: id, replace: false, targetBounds: { left: 0, top }, commandName: "healed marks" }), tick);
 }
 
@@ -246,9 +279,8 @@ async function healOntoLayer(doc, src, result, hooks) {
       return tile;
     },
     write: async (x0, y0, x1, y1, data) => {
-      const pix = await imaging.createImageDataFromBuffer(layerBuffer(src, data), { width: x1 - x0, height: y1 - y0, components: src.C, chunky: true, colorSpace: src.colorSpace, colorProfile: src.colorProfile, fullRange: true });
-      await imaging.putPixels({ layerID: layer.id, imageData: pix, targetBounds: { left: x0, top: y0 }, replace: false, commandName: "dust removed" });
-      pix.dispose();
+      await putScanPixels(src, layerBuffer(src, data), x1 - x0, y1 - y0,
+        (pix) => imaging.putPixels({ layerID: layer.id, imageData: pix, targetBounds: { left: x0, top: y0 }, replace: false, commandName: "dust removed" }));
     },
   };
   for (const b of discs) {
@@ -295,9 +327,8 @@ async function writeDoubtLayer(doc, src, doubt, tick) {
     if (x1 <= x0 || y1 <= y0) continue;
     const buf = new Uint16Array((x1 - x0) * (y1 - y0) * C);
     for (let i = 0; i < buf.length; i += C) for (let c = 0; c < C; c++) buf[i + c] = colour[Math.min(c, colour.length - 1)];
-    const pix = await imaging.createImageDataFromBuffer(layerBuffer(src, buf), { width: x1 - x0, height: y1 - y0, components: C, chunky: true, colorSpace: src.colorSpace, colorProfile: src.colorProfile, fullRange: true });
-    await imaging.putPixels({ layerID: layer.id, imageData: pix, targetBounds: { left: x0, top: y0 }, replace: false, commandName: "doubtful spots" });
-    pix.dispose();
+    await putScanPixels(src, layerBuffer(src, buf), x1 - x0, y1 - y0,
+      (pix) => imaging.putPixels({ layerID: layer.id, imageData: pix, targetBounds: { left: x0, top: y0 }, replace: false, commandName: "doubtful spots" }));
     await tick();
   }
   await putMaskStrips(ringMask(doubt, src.W, src.H), src, (id, top) => imaging.putLayerMask({ layerID: layer.id, imageData: id, replace: false, targetBounds: { left: 0, top }, commandName: "doubtful spots" }), tick);
