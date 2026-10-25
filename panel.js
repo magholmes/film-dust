@@ -42,7 +42,7 @@ const versionText = $("version") ? $("version").textContent : "";
 function showEngine() {
   try { if ($("version")) $("version").textContent = versionText + (require("./engine/native").available() ? " · native" : ""); } catch (e) { /* plain JS engine */ }
 }
-showEngine();
+require("./engine/native").ready().then(showEngine, showEngine);
 
 // whether the native filters loaded here, and if not why, in PluginData/native.txt (Photoshop keeps no plugin console
 // log): the hybrid addon showed no "native" in Photoshop 2026 and nothing said why. Written when the panel opens and
@@ -50,6 +50,7 @@ showEngine();
 async function recordEngine() {
   try {
     const NATV = require("./engine/native"), uxp = require("uxp");
+    await NATV.ready();
     const folder = await uxp.storage.localFileSystem.getDataFolder();
     const file = await folder.createFile("native.txt", { overwrite: true });
     const said = NATV.available() ? "native loaded" : `native not loaded: ${NATV.loadError() || "no addon (plain build)"}`;

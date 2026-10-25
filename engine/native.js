@@ -53,22 +53,32 @@ function load() {
   }
 }
 
-let N = null;
-try { N = load(); } catch (e) { N = null; if (inUxp) loadError = `load threw: ${why(e)}`; }
-if (N) {
-  try {
-    const v = N.version();
-    if (!(v >= 1)) {
-      if (inUxp) loadError = `addon loaded, but version() gave ${typeof v} ${String(v)}; exports ${shape(N)}`;
-      N = null;
-    }
-  } catch (e) {
-    if (inUxp) loadError = `addon loaded, but version() failed: ${why(e)}; exports ${shape(N)}`;
-    N = null;
+// the addon as loaded, checked: version() must answer 1 or more
+function checked(m) {
+  if (!m) {
+    if (inUxp && !loadError) loadError = "require returned nothing";
+    return null;
   }
-} else if (inUxp && !loadError) {
-  loadError = "require returned nothing";
+  try {
+    const v = m.version();
+    if (v >= 1) return m;
+    if (inUxp) loadError = `addon loaded, but version() gave ${typeof v} ${String(v)}; exports ${shape(m)}`;
+  } catch (e) {
+    if (inUxp) loadError = `addon loaded, but version() failed: ${why(e)}; exports ${shape(m)}`;
+  }
+  return null;
 }
+
+// Photoshop 2026 (UXP 9) hands a hybrid addon over as a promise: native is on once it resolves (ready()); runs and
+// the panel wait for that first, so nothing reads N before it is known
+let N = null;
+let readyP = Promise.resolve();
+try {
+  const m = load();
+  if (m && typeof m.then === "function") {
+    readyP = Promise.resolve(m).then((mod) => { N = checked(mod); }, (e) => { loadError = `the addon's promise failed: ${why(e)}`; N = null; });
+  } else N = checked(m);
+} catch (e) { N = null; if (inUxp) loadError = `load threw: ${why(e)}`; }
 
 const big = (w, h) => !!N && w * h >= MIN_PX;
 
@@ -329,7 +339,7 @@ function averageStrip(src, srcW, rows, C, k, dst, Wd, yd0, eight) {
 }
 
 module.exports = {
-  available: () => !!N, loadError: () => loadError, big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
+  ready: () => readyP, available: () => !!N, loadError: () => loadError, big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
   median8f, ellipse, sepConv, box3, boxBlur, sobel, netLoad, netForward,
   blockStats, noiseByLevel, zMaps, npGradient, resizeLinear, label, binMorph, outsideMask,
 };

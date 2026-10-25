@@ -56,6 +56,7 @@ function doubtful(marks, max = 40) {
 }
 
 async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
+  await NAT.ready();   // the native filters, once Photoshop has handed them over
   const t0 = Date.now();
   const log = hooks.log || (() => {});
   const tick = hooks.tick || (async () => {});
@@ -92,6 +93,9 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
   const r1 = await detect(img, W, H, C, base, dhooks);
   const marks = r1.marks;
   for (const m of marks) m.pass = 1;
+  // the scene model's second opinion (engine/scene.js): what the whole picture says about each mark, before healing
+  const P0 = Object.assign({}, DEFAULTS, base);
+  const SCN = healing ? await require("./scene").apply(img, W, H, C, r1, P0, log, tick) : null;
   // faint soft discs on smooth ground (engine/discs.js): found and judged now, taken away by subtracting their
   // veil before the patch heals; bright dust only (inverted negatives)
   const P = Object.assign({}, DEFAULTS, base);
@@ -207,11 +211,13 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
     const pol = r1.polarities.length === 1 ? r1.polarities[0] : "both";
     for (let n = 2; n <= passes; n++) {
       pass = n;
-      // skin texture left in the first pass stays as it is
-      const skin = marks.filter((m) => m.verdict === "keep-photo" && (m.why || "").startsWith("on skin")).map((m) => [m.cx, m.cy]);
+      // skin texture left in the first pass and the heals the scene model called picture stay as they are
+      const skin = marks.filter((m) => m.verdict === "keep-photo" && (m.why || "").startsWith("on skin")).map((m) => [m.cx, m.cy])
+        .concat(SCN ? SCN.protect : []);
       // the second look: sharp marks only (soft dust is judged in the first; here it added 0-3
       // marks per scan for a quarter of the run)
       const r2 = await detect(img, W, H, C, Object.assign({}, base, { polarity: pol, second_pass: true, protect: skin, soft_path: false }), dhooks);
+      if (SCN) SCN.vetoed2 = (SCN.vetoed2 || 0) + require("./scene").vetoLater(SCN, r2, W, H, P0, log);
       const fresh = r2.marks.filter((m) => m.verdict === "defect");
       log(`pass ${n}: ${fresh.length} more marks`);
       if (!fresh.length) break;
@@ -235,6 +241,7 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
     hairs: byKind["hair/fibre"] || 0, soft: byKind.soft || 0,
     polarity: r1.polarities, seconds: Math.round((Date.now() - t0) / 100) / 10,
   };
+  if (SCN && SCN.scored) stats.scene = { scored: SCN.scored, vetoed: SCN.vetoed, added: SCN.added, vetoed2: SCN.vetoed2 || 0, seconds: Math.round(SCN.ms / 100) / 10 };
   if (discs.length) stats.discs = discs.filter((m) => m.verdict === "defect" && m.disc && !m.disc.fibre).length;
   if (rescued) stats.discs_shaped = rescued - near - fibreDiscs;
   if (near) stats.discs_near = near;
