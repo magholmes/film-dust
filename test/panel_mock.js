@@ -1,8 +1,7 @@
 "use strict";
 // Runs panel.js end to end in node against a mock of Photoshop's UXP API (photoshop + uxp modules and
-// a tiny DOM): Remove dust on a synthetic 16-bit scan with dust, then "Learn from my fixes" after
-// painting two heals back on the mask. Catches code errors in the panel's flow; it can't prove that
-// Photoshop accepts each call (only Photoshop can).
+// a tiny DOM): Remove dust on a synthetic 16-bit scan with dust, then check for updates. Catches code errors in the
+// panel's flow; it can't prove that Photoshop accepts each call (only Photoshop can).
 //   node test/panel_mock.js      (MOCK_K=2: the big-scan path · MOCK_SMALL=1: judged as the small scan it is)
 const fs = require("fs"), os = require("os"), path = require("path"), Module = require("module");
 
@@ -169,22 +168,6 @@ Module._load = function (req, parent, isMain) {
     console.log(`faint disc middle (green, mean): scan ${Math.round(a / n)}, layer ${Math.round(b / n)}, mask ${m[dy0 * W + dx0] > 127 ? "on" : "off"}`);
   }
   console.log("dust mask white px:", white, "· doubtful layer:", doubt ? `mask px ${masks.get(doubt.id).reduce((a, v) => a + (v > 127), 0)}` : "none");
-  // he paints two heals back: black over the first two healed marks' boxes on the mask
-  let painted = 0;
-  for (let i = 0; i < m.length && painted < 2; i++) {
-    if (m[i] > 127) {
-      const y = Math.floor(i / W), x = i % W;
-      for (let yy = Math.max(0, y - 12); yy < Math.min(H, y + 12); yy++) for (let xx = Math.max(0, x - 12); xx < Math.min(W, x + 12); xx++) m[yy * W + xx] = 0;
-      painted++;
-    }
-  }
-  await $("learn").handlers.click();
-  console.log("learn status:", $("status").textContent);
-  const lf = path.join(dataDir, "labels.jsonl");
-  if (fs.existsSync(lf)) {
-    const rows = fs.readFileSync(lf, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    console.log("labels saved:", rows.length, rows.map((r) => `${r.label} ${r.mark.kind} (${r.mark.cx},${r.mark.cy})`).join(" · "));
-  } else console.log("labels saved: none");
   console.log("host calls:", [...new Set(calls)].join(", "));
 
   // check for updates (the one thing that goes online, and only when clicked): GitHub answers with a newer release,

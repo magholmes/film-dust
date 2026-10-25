@@ -12,7 +12,11 @@ function load() {
   let uxp = null;
   try { uxp = require("uxp"); } catch (e) { uxp = null; }
   if (uxp) {
-    try { return require("filmdust.uxpaddon"); } catch (e) { return null; }
+    // a missing or refused addon leaves the JS filters running; say why in Photoshop's UXP log (Logs/UXPLogs_*.log)
+    try { return require("filmdust.uxpaddon"); } catch (e) {
+      try { console.error("film dust: native addon not loaded:", String((e && e.message) || e)); } catch (e2) { /* no console */ }
+      return null;
+    }
   }
   try {
     if (typeof process !== "undefined" && process.env && process.env.FILMDUST_NATIVE === "0") return null;

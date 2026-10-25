@@ -336,89 +336,6 @@ async function writeDoubtLayer(doc, src, doubt, tick) {
   return layer;
 }
 
-// ---------- learning from his fixes ----------------------------------------------------------------
-
-// the last run, so "Learn from my fixes" can see which heals he painted back on the layer's mask
-let lastRun = null;
-
-// share of each healed mark's box still white on the "dust removed" mask, read in strips
-async function readMaskCoverage(doc, layerID, run, tick) {
-  const { k, fullW: W, fullH: H } = run;
-  const marks = run.healed;
-  const on = new Float64Array(marks.length), all = new Float64Array(marks.length);
-  const rowsPer = Math.max(k, Math.floor(32e6 / W / k) * k);
-  for (let y0 = 0; y0 < H; y0 += rowsPer) {
-    const y1 = Math.min(H, y0 + rowsPer);
-    const hit = [];
-    for (let i = 0; i < marks.length; i++) if ((marks[i].y1 + 1) * k > y0 && marks[i].y0 * k < y1) hit.push(i);
-    if (!hit.length) continue;
-    const res = await imaging.getLayerMask({ documentID: doc.id, layerID, kind: "user", sourceBounds: { left: 0, top: y0, right: W, bottom: y1 } });
-    const id = res.imageData, sb = res.sourceBounds || { left: 0, top: y0 };
-    const data = await id.getData({ chunky: true });
-    const w = id.width, h = id.height;
-    id.dispose();
-    for (const i of hit) {
-      const m = marks[i];
-      for (let y = Math.max(m.y0 * k, sb.top); y < Math.min((m.y1 + 1) * k, sb.top + h); y++) {
-        for (let x = Math.max(m.x0 * k, sb.left); x < Math.min((m.x1 + 1) * k, sb.left + w); x++) {
-          all[i]++;
-          if (data[(y - sb.top) * w + (x - sb.left)] >= 128) on[i]++;
-        }
-      }
-    }
-    await tick();
-  }
-  return marks.map((m, i) => (all[i] ? on[i] / all[i] : 1));
-}
-
-// rows appended to a JSON-lines file in the plugin's data folder
-async function appendRows(name, rows) {
-  const fs = require("uxp").storage.localFileSystem;
-  const folder = await fs.getDataFolder();
-  let text = "";
-  try { const f = await folder.getEntry(name); text = await f.read(); } catch (e) { text = ""; }
-  const file = await folder.createFile(name, { overwrite: true });
-  await file.write(text + rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
-  return file.nativePath;
-}
-
-// his answers go to labels.jsonl; the skill's tests/answers/import_plugin_labels.py folds them into the
-// next retraining.
-const saveLabels = (rows) => appendRows("labels.jsonl", rows);
-
-async function learn() {
-  if (busy) return;
-  const doc = app.activeDocument;
-  if (!lastRun || !doc || doc.id !== lastRun.docId) return status("run Remove dust on this scan first, then paint black on the mask where a heal was wrong", "error");
-  if (!doc.layers.some((l) => l.id === lastRun.layerID)) return status("the “dust removed” layer is gone · nothing to learn from", "error");
-  setBusy(true);
-  const rows = [];
-  try {
-    await core.executeAsModal(async (ctx) => {
-      const tick = async () => { if (ctx.isCancelled) throw new Error("cancelled"); await new Promise((r) => setTimeout(r, 0)); };
-      status("reading your fixes on the mask…");
-      const cover = await readMaskCoverage(doc, lastRun.layerID, lastRun, tick);
-      const when = new Date().toISOString();
-      lastRun.healed.forEach((m, i) => {
-        if (cover[i] < 0.3) rows.push({ when, doc: doc.title, k: lastRun.k, size: [lastRun.fullW, lastRun.fullH], label: "photo", source: "painted back", mark: m });
-      });
-    }, { commandName: "Learn from my fixes" });
-    if (!rows.length) {
-      setBusy(false);
-      return status("no painted-back heals found · paint black on the “dust removed” mask where a heal was wrong", "done");
-    }
-    const where = await saveLabels(rows);
-    setBusy(false);
-    status(`${rows.length} painted-back heal${rows.length === 1 ? "" : "s"} saved as photo answers · ${where}`, "done");
-  } catch (e) {
-    setBusy(false);
-    console.error(e);
-    status(describe(e), "error");
-  }
-}
-
-$("learn").addEventListener("click", learn);
-
 // ---------- updates ----------------------------------------------------------------------------
 
 // Only when asked: "check for updates" is the one thing that goes online. Each release on GitHub carries two files
@@ -552,7 +469,6 @@ async function run() {
         } else {
           await writeLayer(doc, src, result.mask, tick);
         }
-        lastRun = { docId: doc.id, layerID: writeLayer.last.id, k, fullW: src.fullW, fullH: src.fullH, healed: result.marks.filter((m) => m.verdict === "defect") };
         // the doubtful spots get their own hidden layer; a failure there never undoes the healing
         if (result.doubtful && result.doubtful.length) {
           try {
@@ -587,7 +503,6 @@ async function run() {
   $("r-discs").textContent = thousands(s.discs || 0);
   $("r-kept").textContent = thousands(s.left_alone);
   $("r-doubt").textContent = thousands(s.doubtful || 0);
-  $("after").hidden = !s.healed;
   $("r-subject").textContent = subject ? "found" : "none found";
   $("r-scale").textContent = scaleWords(k);
   $("r-time").textContent = clock(Date.now() - t0);

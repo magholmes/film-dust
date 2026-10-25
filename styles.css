@@ -35,10 +35,12 @@ html, body {
   line-height: 1.4;
 }
 
+/* the panel's height: the results scroll in the middle, check for updates and the status line stay at the bottom */
 body {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   user-select: none;
 }
 
@@ -54,7 +56,8 @@ body {
 .name { font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--ink); }
 .meta { font-size: 11px; color: var(--mute2); font-variant-numeric: tabular-nums; }
 
-.rows { flex: 1; padding: 8px var(--gutter) 0; }
+.rows { flex: 1; min-height: 0; overflow-y: auto; padding: 8px var(--gutter) 0; }
+.updates, .status, .band { flex: none; }
 
 .label {
   flex: 0 0 var(--label-col);
