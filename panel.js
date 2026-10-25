@@ -388,6 +388,86 @@ async function learn() {
 
 $("learn").addEventListener("click", learn);
 
+// ---------- updates ----------------------------------------------------------------------------
+
+// Only when asked: "check for updates" is the one thing that goes online. Each release on GitHub carries two files
+// under fixed names, film-dust-windows.ccx (native; its version is the release's tag) and film-dust-mac.ccx (plain JS,
+// one patch behind); an update is downloaded to the plugin's data folder and handed to Creative Cloud's installer.
+const RELEASES = "https://api.github.com/repos/magholmes/film-dust/releases/latest";
+const parseVersion = (s) => String(s).replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+const newer = (a, b) => { for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); return false; };
+let pendingUpdate = null;
+
+// this build: its version, the release it belongs to, and the file that updates it
+async function thisBuild() {
+  const folder = await require("uxp").storage.localFileSystem.getPluginFolder();
+  const man = JSON.parse(await (await folder.getEntry("manifest.json")).read());
+  const native = !!man.addon, v = parseVersion(man.version);
+  return { version: man.version, release: native ? v : [v[0], v[1], (v[2] || 0) + 1], file: native ? "film-dust-windows.ccx" : "film-dust-mac.ccx" };
+}
+
+function updateButton(text, ready = false) {
+  $("update").textContent = text;
+  $("update").className = "link" + (ready ? " is-ready" : "");
+}
+
+async function checkForUpdates() {
+  if (busy) return;
+  if (pendingUpdate) return installUpdate();
+  $("update").disabled = true;
+  updateButton("checking…");
+  try {
+    const me = await thisBuild();
+    const r = await fetch(RELEASES, { headers: { Accept: "application/vnd.github+json" } });
+    if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
+    const rel = await r.json();
+    const asset = (rel.assets || []).find((a) => a.name === me.file);
+    if (!asset || !newer(parseVersion(rel.tag_name), me.release)) {
+      updateButton("check for updates");
+      status(`up to date · ${me.version} is the latest`, "done");
+    } else {
+      pendingUpdate = { tag: String(rel.tag_name).replace(/^v/, ""), url: asset.browser_download_url };
+      updateButton(`update to ${pendingUpdate.tag}`, true);
+      status(`${pendingUpdate.tag} is out · update downloads it and opens Creative Cloud’s installer`, "done");
+    }
+  } catch (e) {
+    console.error(e);
+    updateButton("check for updates");
+    status("couldn’t reach GitHub · check the connection and try again", "error");
+  }
+  $("update").disabled = false;
+}
+
+async function installUpdate() {
+  const u = pendingUpdate, uxp = require("uxp");
+  $("update").disabled = true;
+  updateButton(`downloading ${u.tag}…`);
+  let saved = "";
+  try {
+    const r = await fetch(u.url);
+    if (!r.ok) throw new Error(`the download answered ${r.status}`);
+    const buf = await r.arrayBuffer();
+    const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+    if (buf.byteLength < 100000 || head[0] !== 0x50 || head[1] !== 0x4b) throw new Error("the download isn’t a plugin file");
+    const folder = await uxp.storage.localFileSystem.getDataFolder();
+    const file = await folder.createFile(`film-dust-${u.tag}.ccx`, { overwrite: true });
+    await file.write(buf, { format: uxp.storage.formats.binary });
+    saved = file.nativePath;
+    const err = await uxp.shell.openPath(saved, "Opens the film dust update in Creative Cloud’s installer.");
+    if (err) throw new Error(err);
+    pendingUpdate = null;
+    updateButton("check for updates");
+    status(`the installer is open · approve it, then restart Photoshop`, "done");
+  } catch (e) {
+    console.error(e);
+    updateButton(`update to ${u.tag}`, true);
+    status(saved ? `${u.tag} is saved at ${saved} · double-click it to install` : `couldn’t download ${u.tag} · ${(e && e.message) || e}`, "error");
+  }
+  $("update").disabled = false;
+}
+
+$("update").addEventListener("click", checkForUpdates);
+
 // ---------- the run --------------------------------------------------------------------------
 
 function setBusy(on) {

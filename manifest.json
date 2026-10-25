@@ -2,13 +2,31 @@
   "manifestVersion": 5,
   "id": "com.magnusholmes.filmdust",
   "name": "film dust",
-  "version": "1.8.52",
+  "version": "1.8.54",
   "main": "index.html",
   "host": {
     "app": "PS",
     "minVersion": "25.0.0",
     "data": {
       "apiVersion": 2
+    }
+  },
+  "requiredPermissions": {
+    "network": {
+      "domains": [
+        "https://api.github.com",
+        "https://github.com",
+        "https://release-assets.githubusercontent.com",
+        "https://objects.githubusercontent.com"
+      ]
+    },
+    "launchProcess": {
+      "schemes": [
+        "https"
+      ],
+      "extensions": [
+        ".ccx"
+      ]
     }
   },
   "entrypoints": [

@@ -688,6 +688,7 @@ async function find(ctx, bright) {
       f.white = look[0]; f.sharp = look[1]; f.bg = look[2];
       f.zone = !!(p.zone_guard && !(bt + zm <= f.cy && f.cy <= bb - zm && bl + zm <= f.cx && f.cx <= br - zm));
       f.print = printBand(box, f.cx, f.cy);
+      f.frame = M.beyondFrame(box.frame, W, H, f.cx, f.cy, p.frame_margin);
     }
     const fills = [];
     for (let i = 0; i < nO; i++) fills.push(await fillOf(i));
@@ -748,6 +749,7 @@ async function find(ctx, bright) {
       f.white = look[0]; f.sharp = look[1]; f.bg = look[2];
       f.zone = !!(p.zone_guard && !(bt + zm <= f.cy && f.cy <= bb - zm && bl + zm <= f.cx && f.cx <= br - zm));
       f.print = printBand(box, f.cx, f.cy);
+      f.frame = M.beyondFrame(box.frame, W, H, f.cx, f.cy, p.frame_margin);
       const pad = 45;
       const wy0 = Math.max(0, f.y0 - pad), wy1 = Math.min(H, f.y1 + pad), wx0 = Math.max(0, f.x0 - pad), wx1 = Math.min(W, f.x1 + pad);
       const ww = wx1 - wx0, wh = wy1 - wy0;
@@ -822,6 +824,10 @@ async function find(ctx, bright) {
       if (f.zone && lf.straight <= p.straight_max && lf.length >= p.straight_len) { keepPhoto(f, "ruler-straight line on the film border (film/holder edge)"); continue; }
     }
     if (f.print) { keepPhoto(f, "on the film's edge print (outside the picture)"); continue; }
+    if (f.frame && (f.ring_range ?? 0) >= p.frame_ring && (f.area ?? 0) >= (p.frame_area * W * H) / 1e6 / p.res_ref_mp
+      && (f.width ?? 0) >= p.frame_width * Math.sqrt((W * H) / 1e6 / p.res_ref_mp)) {
+      keepPhoto(f, "on the film border: edge print, a sprocket hole or a frame marker"); continue;
+    }
     if (f.zone) {
       if (f.white < p.zone_white) { keepPhoto(f, "tinted mark on the film border (border grain)"); continue; }
       const crowd = around.filter((j) => A[j] >= 4);
@@ -2087,6 +2093,7 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
   const G3 = F.gaussianBlur(Y, W, H, 3.0);
   glap("blur2.5+3");
   const box = p.zone_guard ? M.imageBox(Y, W, H) : [0, H, 0, W];
+  if (p.frame_guard) box.frame = M.frameEdges(Y, W, H);
   glap("box");
   if (hooks.timing) log(`[grain] seconds: ${gt.join(" · ")}`);
   // the subject (Photoshop's Select Subject), only when it has the scan's size and something in it

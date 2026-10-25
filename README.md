@@ -45,7 +45,7 @@ Where the crops came from.
 - Hairs and fibres.
 - Soft, out-of-focus dust, including the faint circles you get in skies.
 
-It leaves catchlights, reflections, sun through leaves and other highlights alone.
+It leaves catchlights, reflections, sun through leaves and other highlights alone. Same with the edge print and sprocket holes if your scan shows the film border.
 
 Small scans get a more careful pass. Under about 40 MP, a face or a sign in the distance can be the same size as a speck of dust, so it only takes spots that are clearly dust and leaves anything bigger alone.
 
@@ -65,7 +65,7 @@ A 60–70 MP scan takes about a minute on Windows.
 2. Double-click it and Creative Cloud installs it. On Windows it asks for admin permission.
 3. Restart Photoshop.
 
-You need Photoshop 2024 (25.0) or newer.
+You need Photoshop 2024 (25.0) or newer. To update later, click check for updates at the bottom of the panel.
 
 If double-clicking doesn't work, you can install it with Adobe's installer from a terminal. On Windows:
 
@@ -83,7 +83,7 @@ Can't give it admin rights on Windows? The Mac file works on Windows too. It's s
 
 ## Privacy
 
-It all runs on your computer. No account, and nothing gets uploaded.
+It all runs on your computer. No account, and nothing gets uploaded. It only goes online when you click check for updates, and then only to ask GitHub for the latest version.
 
 ## Building it yourself
 

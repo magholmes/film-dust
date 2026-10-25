@@ -15,7 +15,15 @@ const DEFAULTS = {
   soft_elong_max: 4.5, soft_plateau: 0.5, soft_cos_white: 0.95, soft_row: true, soft_tex_sim: 5, soft_tex_near: 40, partners: true, soft_fill: 0.12, trace_max: 2500,
   trace_min_z: 2.0, trace_turn: 35.0, chain_px: 14, absorb_px: 26, texture_guard: true, line_guard: true,
   chain_gaps: 0.25, chain_per: 0.36, edge_one: 0.9, edge_frac: 0.65, zone_guard: true, zone_margin: 25,
-  zone_white: 0.5, zone_crowd_z: 3.0, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
+  zone_white: 0.5, zone_crowd_z: 3.0,
+  // the film's frame edges (frameEdges): past one, a mark with bright and dark structure around it (ring_range at least
+  // frame_ring: a letter of the edge print, a sprocket hole's rim, a frame marker) is never healed; a lone speck or hair
+  // there still is. 10-25: c_14 (Ektachrome) lost pieces of "E100", "KODAK" and a frame number, q_07 its sprocket holes;
+  // the border's lone flakes measure 0.08-0.19, the print and rims 0.55-1.05. Only marks of frame_area px or more (at
+  // res_ref_mp; pieces of print and rims are 600-1,800): ring_range is relative to the mark's own contrast, so a faint
+  // speck on a grainy border reads high too; and frame_width px wide or more (print and rims 20-36 at res_ref_mp, a hair
+  // on the border 4-6: Man's two on his top border stay healed)
+  frame_guard: true, frame_ring: 0.4, frame_margin: 4, frame_area: 200, frame_width: 8, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
   paper_white: 0.75, detail_max: 1.2, tex_min: 0.45, detail_crisp: 0.9, detail_gain: 1.2, broad_min: 0.3,
   // taught by Magnus's answers (2026-10-16): strong specks beside dark edges, strong crisp specks on skin
   // and the strength a lone hair needs
@@ -448,4 +456,93 @@ function imageBox(Y, W, H, dark = 0.2, frac = 0.65, search = 0.12, step = 4) {
   return box;
 }
 
-module.exports = { DEFAULTS, params, lumaFromU16, median8f, opening, outsideMask, noiseByLevel, noiseLocal, busyness, residualMaps, edgeWidth, kindOf, skinLike, imageBox, interp1, median3f };
+// The film's frame edges, where the picture meets a dark border (the rebate with its edge print and sprocket holes, the
+// gap between frames, the holder). On each side, at a quarter of the size: the steps from dark outside to brighter inside
+// in 8 stretches along the side, the lines at least 3 stretches agree on (a slight tilt allowed), and the innermost line
+// whose strip just outside is dark (at most 0.18, and under 3/4 of the picture beside it) and flat in at least 6
+// stretches. Medians across each stretch, so print and sprocket holes don't count against a border; dark picture (a night
+// sky, a dark wall) has no straight step with flat dark ground beyond it, and a deep "border" on one side only (a wall
+// beside a window) is dropped. Returns { top, bottom, left, right }: null, or { a, b } with the border's depth from that
+// side a + b * t (full-size px; t along the side). 29 scans 10-25: every border of his drawn right, none on 7 borderless
+// scans and photos.
+function frameEdges(Y, W, H, step = 4) {
+  const w = Math.floor(W / step), h = Math.floor(H / step);
+  if (w < 64 || h < 64) return { top: null, bottom: null, left: null, right: null };
+  const sm = F.gaussianBlur(F.resizeArea(Y, W, H, w, h), w, h, 1.5);
+  const med = (a) => { if (!a.length) return NaN; const s = Float64Array.from(a).sort(); return s[s.length >> 1]; };
+  const SEGS = 8, SUPPORT = 3, CONFIRM = 6, MIN_STEP = 0.03, MIN_REL = 0.3, DARK = 0.18, RATIO = 0.75, FLAT = 0.012, NEAR = 6, TOL = 2, SLOPE = 0.02;
+  const sides = {
+    left: [h, w, (t, d) => sm[t * w + d]], right: [h, w, (t, d) => sm[t * w + (w - 1 - d)]],
+    top: [w, h, (t, d) => sm[d * w + t]], bottom: [w, h, (t, d) => sm[(h - 1 - d) * w + t]],
+  };
+  const out = {};
+  for (const [name, [L, D, v]] of Object.entries(sides)) {
+    const dMax = Math.floor(0.25 * D), t0 = Math.floor(0.1 * L), t1 = Math.floor(0.9 * L), segLen = (t1 - t0) / SEGS;
+    const seg = [];
+    for (let k = 0; k < SEGS; k++) {
+      const ta = Math.floor(t0 + k * segLen), tb = Math.floor(t0 + (k + 1) * segLen);
+      const lev = new Float64Array(dMax), stp = new Float64Array(dMax), rough = new Float64Array(dMax);
+      for (let d = 0; d < dMax; d++) {
+        const l_ = [], s_ = [], r_ = [];
+        for (let t = ta; t < tb; t++) {
+          l_.push(v(t, d));
+          if (d >= 1 && d + 2 < D) s_.push(v(t, d + 2) - v(t, d - 1));
+          if (t + 1 < tb) r_.push(Math.abs(v(t + 1, d) - v(t, d)));
+        }
+        lev[d] = med(l_); stp[d] = s_.length ? med(s_) : 0; rough[d] = med(r_);
+      }
+      const cands = [];
+      for (let d = 4; d < dMax - 4; d++) {
+        const o = lev[d - 3], i = lev[d + 3];
+        if (stp[d] >= MIN_STEP && stp[d] >= stp[d - 1] && stp[d] >= stp[d + 1] && o <= DARK && (i - o) / (o + 0.02) >= MIN_REL) cands.push({ d, s: stp[d] });
+      }
+      seg.push({ tm: (ta + tb) / 2, lev, rough, cands });
+    }
+    let best = null;
+    for (let k = 0; k < SEGS; k++) for (const c of seg[k].cands) for (let bi = -8; bi <= 8; bi++) {
+      const b = (SLOPE * bi) / 8, sup = [];
+      for (let j = 0; j < SEGS; j++) {
+        const want = c.d + b * (seg[j].tm - seg[k].tm);
+        let hit = null;
+        for (const e of seg[j].cands) if (Math.abs(e.d - want) <= TOL && (!hit || e.s > hit.s)) hit = e;
+        if (hit) sup.push({ t: seg[j].tm, d: hit.d, s: hit.s });
+      }
+      if (sup.length < SUPPORT) continue;
+      let ok = 0;
+      for (let j = 0; j < SEGS; j++) {
+        const dj = Math.round(c.d + b * (seg[j].tm - seg[k].tm)), hi = dj - 3, lo = hi - NEAR, ia = dj + 3, ib = dj + 3 + NEAR;
+        if (lo < 0 || ib >= dMax) continue;
+        const l_ = [], r_ = [], i_ = [];
+        for (let d = lo; d <= hi; d++) { l_.push(seg[j].lev[d]); r_.push(seg[j].rough[d]); }
+        for (let d = ia; d <= ib; d++) i_.push(seg[j].lev[d]);
+        const Ln = med(l_);
+        if (med(r_) <= FLAT && Ln <= RATIO * med(i_) && Ln <= DARK) ok++;
+      }
+      if (ok < CONFIRM) continue;
+      const score = sup.length * 10 + sup.reduce((a, x) => a + x.s, 0);
+      if (!best || c.d > best.d + TOL || (Math.abs(c.d - best.d) <= TOL && score > best.score)) best = { d: c.d, b, sup, score };
+    }
+    if (!best) { out[name] = null; continue; }
+    const xs = best.sup.map((e) => e.t), ys = best.sup.map((e) => e.d);
+    const mx = xs.reduce((a, x) => a + x, 0) / xs.length, my = ys.reduce((a, x) => a + x, 0) / ys.length;
+    let sxx = 0, sxy = 0;
+    for (let i = 0; i < xs.length; i++) { sxx += (xs[i] - mx) ** 2; sxy += (xs[i] - mx) * (ys[i] - my); }
+    const b = sxx && xs.length >= 3 ? sxy / sxx : best.b;
+    out[name] = { a: (my - b * mx) * step + step / 2, b };
+  }
+  const found = Object.keys(out).filter((k) => out[k]);
+  for (const k of found) if (found.length === 1 && out[k].a > 0.06 * (k === "left" || k === "right" ? W : H)) out[k] = null;
+  return out;
+}
+
+// past a frame edge (frameEdges) by at least margin px
+function beyondFrame(fe, W, H, x, y, margin) {
+  if (!fe) return false;
+  if (fe.left && x < fe.left.a + fe.left.b * y - margin) return true;
+  if (fe.right && W - 1 - x < fe.right.a + fe.right.b * y - margin) return true;
+  if (fe.top && y < fe.top.a + fe.top.b * x - margin) return true;
+  if (fe.bottom && H - 1 - y < fe.bottom.a + fe.bottom.b * x - margin) return true;
+  return false;
+}
+
+module.exports = { DEFAULTS, params, lumaFromU16, median8f, opening, outsideMask, noiseByLevel, noiseLocal, busyness, residualMaps, edgeWidth, kindOf, skinLike, imageBox, frameEdges, beyondFrame, interp1, median3f };

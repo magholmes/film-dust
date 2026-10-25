@@ -97,9 +97,11 @@ const uxp = {
     localFileSystem: {
       getDataFolder: async () => ({
         getEntry: async (n) => { const p = path.join(dataDir, n); if (!fs.existsSync(p)) throw new Error("missing"); return { read: async () => fs.readFileSync(p, "utf8"), delete: async () => fs.unlinkSync(p), nativePath: p }; },
-        createFile: async (n) => { const p = path.join(dataDir, n); return { write: async (t) => fs.writeFileSync(p, t), nativePath: p }; },
+        createFile: async (n) => { const p = path.join(dataDir, n); return { write: async (t) => fs.writeFileSync(p, typeof t === "string" ? t : Buffer.from(t)), nativePath: p }; },
       }),
+      getPluginFolder: async () => ({ getEntry: async (n) => ({ read: async () => fs.readFileSync(path.join(ROOT, n), "utf8") }) }),
     },
+    formats: { binary: "binary", utf8: "utf8" },
   },
 };
 // the panel never goes on the network: any request fails the test
@@ -180,4 +182,27 @@ Module._load = function (req, parent, isMain) {
     console.log("labels saved:", rows.length, rows.map((r) => `${r.label} ${r.mark.kind} (${r.mark.cx},${r.mark.cy})`).join(" · "));
   } else console.log("labels saved: none");
   console.log("host calls:", [...new Set(calls)].join(", "));
+
+  // check for updates (the one thing that goes online, and only when clicked): GitHub answers with a newer release,
+  // its file for this build is downloaded and handed to the installer; then a release equal to this one is up to date
+  const opened = [], fetched = [];
+  uxp.shell = { openPath: async (p) => { opened.push(p); return ""; } };
+  const man = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+  const want = man.addon ? "film-dust-windows.ccx" : "film-dust-mac.ccx";
+  global.fetch = async (url) => {
+    fetched.push(url);
+    if (url.startsWith("https://api.github.com/")) return { ok: true, status: 200, json: async () => ({ tag_name: "v9.9.9", assets: ["film-dust-windows.ccx", "film-dust-mac.ccx"].map((n) => ({ name: n, browser_download_url: `https://github.com/magholmes/film-dust/releases/download/v9.9.9/${n}` })) }) };
+    if (url.endsWith(want)) { const b = new Uint8Array(150000); b[0] = 0x50; b[1] = 0x4b; return { ok: true, status: 200, arrayBuffer: async () => b.buffer }; }
+    throw new Error(`unexpected request to ${url}`);
+  };
+  await $("update").handlers.click();
+  console.log("update check:", $("update").textContent, "·", $("status").textContent);
+  await $("update").handlers.click();
+  console.log("update install:", $("status").textContent, "· opened", opened.map((p) => path.basename(p)).join(", ") || "nothing");
+  const okUpdate = opened.length === 1 && opened[0].endsWith("film-dust-9.9.9.ccx") && fs.existsSync(opened[0]) && fetched.length === 2 && fetched[1].endsWith(want);
+  const release = man.addon ? man.version : man.version.replace(/(\d+)$/, (d) => String(Number(d) + 1));
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ tag_name: "v" + release, assets: [{ name: want, browser_download_url: "https://github.com/x" }] }) });
+  await $("update").handlers.click();
+  console.log("update when current:", $("status").textContent);
+  if (!okUpdate || !$("status").textContent.startsWith("up to date")) { console.log("UPDATE CHECK FAILED"); process.exitCode = 1; }
 })().catch((e) => { console.error("PANEL ERROR", e); process.exit(1); });

@@ -120,6 +120,24 @@ body {
 .figure { color: var(--ink); font-variant-numeric: tabular-nums; }
 .results[hidden] { display: none; }
 
+/* updates: a quiet line above the status; the panel goes online only when it is clicked */
+.updates { margin: 0 var(--gutter); padding: 4px 0; }
+.link {
+  height: 24px;              /* the hit target, though the words are small */
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.link:hover { color: var(--ink2); }
+.link.is-ready { color: var(--ink); }
+.link:disabled { color: var(--mute2); cursor: default; }
+.link:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+
 /* the status line is the toast */
 .status {
   margin: 0 var(--gutter);
