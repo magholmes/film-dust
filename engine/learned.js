@@ -19,7 +19,7 @@ const KINDS = ["hair/fibre", "dust", "speck", "soft"];
 
 // rules the model never overrules, and the strength from which left-alone marks were asked about
 const VETO = ["link texture", "rides along an edge", "ruler-straight", "runs with the strand texture",
-  "one of", "grain marks on the film border"];
+  "one of", "grain marks on the film border", "soft for dust on a small scan"];
 const FLOOR = { "hair/fibre": 10.0, dust: 10.0, speck: 9.0, soft: 12.0 };
 
 const num = (v) => (typeof v === "number" ? v : NaN);

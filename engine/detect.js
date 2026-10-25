@@ -606,6 +606,7 @@ async function find(ctx, bright) {
     for (const b of bridges) b[0] = root(b[0]);
   }
 
+  const smallScanRules = p.res_guard && Math.max((W * H) / 1e6, p.res_scan_mp || 0) < p.res_full_mp;
   // 3. colour + crispness at each object's brightest point; solid fill; line features; cues
   const [bt, bb, bl, br] = box;
   const zm = p.zone_margin;
@@ -854,6 +855,14 @@ async function find(ctx, bright) {
       if (flake) f.flake = true;
     }
     if (crisp < needCrisp && !(nearWhite && f.white >= 0.45) && !flake) { keepPhoto(f, "not crisp enough for debris on the film (photo detail)"); continue; }
+    // small scans: picture details on a soft or shrunk scan (lights, window bars, grass, nails) pass the strong-mark bar and
+    // the near-white exemption; dust there stays crisper (res_crisp). Not on plain ground, where a soft white blob is a
+    // flake (q_05's two in a blue sky, q_10's on plain grey). 10-25: 238 hand-labelled big heals on 33 Commons scans,
+    // picture healed 175 -> 92 of 179, dust 17 of 17 kept; the lab copies lose 1-8 heals per size, 7-26 new ones go
+    // (nor past the film's frame edge: no picture there, and the edge print has its own rule; u_n10's border flake)
+    if (smallScanRules && !f.frame && crisp < p.res_crisp && !flake && !((f.detail ?? 9) <= p.res_plain_detail && (f.busy ?? 9) <= p.res_plain_busy)) {
+      keepPhoto(f, "soft for dust on a small scan (picture detail)"); continue;
+    }
     if ((f.broad ?? 1.0) < p.broad_min && !(f.kind === "speck" && f.z >= p.broad_speck_z)) { keepPhoto(f, "only bright against dark detail beside it (e.g. skin between tattoo lines)"); continue; }
     if (detailed && !(crisp >= p.detail_crisp && f.white >= 0.5 && f.z >= p.seed * p.detail_gain * Math.max(det, 1.0))
       && !(f.kind === "speck" && f.z >= p.detail_speck_z && crisp >= p.detail_speck_crisp)) { keepPhoto(f, "in detailed photo texture (hair/fabric/foliage): left for safety"); continue; }

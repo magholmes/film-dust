@@ -75,7 +75,7 @@ const DEFAULTS = {
   // lab copies or his photo was on ground this plain; a soft heal on very plain ground (the ring's detail at most
   // res_soft_plain_detail) gets res_soft_plain_mult times: q_04's Y-shaped flake on a plain sky (2.45 x at 4.3 MP; no soft
   // heal on the 40 lab copies went past 1.14 x)
-  res_plain_detail: 0.1, res_plain_busy: 1.25, res_plain_mult: 2, res_soft_plain_detail: 0.05, res_soft_plain_mult: 3,
+  res_plain_detail: 0.1, res_plain_busy: 1.25, res_plain_mult: 2, res_soft_plain_detail: 0.05, res_soft_plain_mult: 3, res_crisp: 0.5,
   // 1.8.50: small discs a little short of the plainest ground (noise up to 2, z 6+) and discs with an edge beside them
   // rather than across (what the ring holds beyond a gradient up to 1.5, no step over 3 x the lift), of the dust's
   // colour within 1.5 x the angle (benchmark +3 dust +7 unsure +16 unlabelled, no photo; 30 survey scans: 46 more, every

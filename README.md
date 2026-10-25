@@ -47,7 +47,7 @@ Where the crops came from.
 
 It leaves catchlights, reflections, sun through leaves and other highlights alone. Same with the edge print and sprocket holes if your scan shows the film border.
 
-Small scans get a more careful pass. Under about 40 MP, a face or a sign in the distance can be the same size as a speck of dust, so it only takes spots that are clearly dust and leaves anything bigger alone.
+Small scans get a more careful pass. Under about 40 MP, a face or a sign in the distance can be the same size as a speck of dust, so it only takes spots that are clearly dust and leaves anything bigger or softer alone.
 
 It was trained on about 180 film scans and 90 digital photos, so it's seen a lot of dust, and a lot of things that only look like dust.
 
