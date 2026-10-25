@@ -310,6 +310,51 @@ class BlobField {
   }
 }
 
+// in the film's edge print (maps.js imageBox: outside the box past the print, inside the box as it was): never healed
+function printBand(box, x, y) {
+  const o = box && box.outer;
+  if (!o) return false;
+  const inNew = box[0] <= y && y <= box[1] && box[2] <= x && x <= box[3];
+  const inOld = o[0] <= y && y <= o[1] && o[2] <= x && x <= o[3];
+  return !inNew && inOld;
+}
+
+// small scans: "" or why a heal must stay (maps.js res_guard). kind: "disc", "hair", "line" (a soft fibre) or anything
+// else (dust); area 0 skips the size test
+function resGuard(p, W, H, x0, y0, x1, y1, area, kind, plain = false) {
+  if (!p.res_guard) return "";
+  const mp = (W * H) / 1e6;
+  if (Math.max(mp, p.res_scan_mp || 0) >= p.res_full_mp) return "";
+  const k2 = mp / p.res_ref_mp;
+  const cap = (kind === "disc" ? p.res_cap_disc : kind === "hair" ? p.res_cap_hair : kind === "line" ? p.res_cap_line : p.res_cap_area) * (plain === true ? p.res_plain_mult : plain || 1);
+  if (area > cap * k2) return "too big for dust at this scan's size";
+  if (Math.min(x0, y0, W - 1 - x1, H - 1 - y1) < p.res_edge_px) return "at the edge of a small scan (the frame line)";
+  return "";
+}
+
+// how much picture detail surrounds a box (marks.js detail: gradient energy at sigma 2.5 against the grain, median over
+// a ring 4-40 px out), for a soft heal the size guard would refuse: plain ground earns it the plain-ground allowance
+function detailAround(ctx, sigLevel, x0, y0, x1, y1) {
+  const { W, H, E25, gradCal } = ctx;
+  const e = [], s = [];
+  for (let y = Math.max(0, y0 - 40); y < Math.min(H, y1 + 41); y += 2) for (let x = Math.max(0, x0 - 40); x < Math.min(W, x1 + 41); x += 2) {
+    if (x >= x0 - 4 && x <= x1 + 4 && y >= y0 - 4 && y <= y1 + 4) continue;
+    e.push(E25[y * W + x]); s.push(sigLevel[y * W + x]);
+  }
+  if (e.length < 20) return Infinity;
+  return R.median(e) / (gradCal * R.median(s) ** 2);
+}
+
+// a soft heal at a small scan's size: past the size limit only on plain ground (twice the limit), or very plain ground
+// (sky, backdrop: res_soft_plain_mult times), where a big soft blob is dust far more often than picture
+function softGuard(p, ctx, sigLevel, W, H, r, n) {
+  const gw = resGuard(p, W, H, r.x0, r.y0, r.x1, r.y1, n, "dust");
+  if (!gw.startsWith("too big")) return gw;
+  const d = detailAround(ctx, sigLevel, r.x0, r.y0, r.x1, r.y1);
+  return d <= p.res_soft_plain_detail ? resGuard(p, W, H, r.x0, r.y0, r.x1, r.y1, n, "dust", p.res_soft_plain_mult)
+    : d <= p.res_plain_detail ? resGuard(p, W, H, r.x0, r.y0, r.x1, r.y1, n, "dust", true) : gw;
+}
+
 // ---------- the sharp pass for one polarity --------------------------------------------------
 
 async function find(ctx, bright) {
@@ -642,6 +687,7 @@ async function find(ctx, bright) {
       const look = K.peakLook(rgbAt, C, Y, W, H, (y, x) => glab[y * W + x] === g, f, bright);
       f.white = look[0]; f.sharp = look[1]; f.bg = look[2];
       f.zone = !!(p.zone_guard && !(bt + zm <= f.cy && f.cy <= bb - zm && bl + zm <= f.cx && f.cx <= br - zm));
+      f.print = printBand(box, f.cx, f.cy);
     }
     const fills = [];
     for (let i = 0; i < nO; i++) fills.push(await fillOf(i));
@@ -701,6 +747,7 @@ async function find(ctx, bright) {
       const look = K.peakLook(rgbAt, C, Y, W, H, (y, x) => glab[y * W + x] === g, f, bright);
       f.white = look[0]; f.sharp = look[1]; f.bg = look[2];
       f.zone = !!(p.zone_guard && !(bt + zm <= f.cy && f.cy <= bb - zm && bl + zm <= f.cx && f.cx <= br - zm));
+      f.print = printBand(box, f.cx, f.cy);
       const pad = 45;
       const wy0 = Math.max(0, f.y0 - pad), wy1 = Math.min(H, f.y1 + pad), wx0 = Math.max(0, f.x0 - pad), wx1 = Math.min(W, f.x1 + pad);
       const ww = wx1 - wx0, wh = wy1 - wy0;
@@ -774,6 +821,7 @@ async function find(ctx, bright) {
       if (lf.one_med >= p.edge_one && lf.one_frac >= p.edge_frac) { keepPhoto(f, "rides along an edge (highlight, rim light or halo)"); continue; }
       if (f.zone && lf.straight <= p.straight_max && lf.length >= p.straight_len) { keepPhoto(f, "ruler-straight line on the film border (film/holder edge)"); continue; }
     }
+    if (f.print) { keepPhoto(f, "on the film's edge print (outside the picture)"); continue; }
     if (f.zone) {
       if (f.white < p.zone_white) { keepPhoto(f, "tinted mark on the film border (border grain)"); continue; }
       const crowd = around.filter((j) => A[j] >= 4);
@@ -902,8 +950,11 @@ async function find(ctx, bright) {
     }
   }
 
-  // 4b. thin elongated pieces right next to a confirmed hair are the same hair
-  for (let it = 0; it < 3; it++) {
+  // 4b. thin elongated pieces right next to a confirmed hair are the same hair (not on small scans: there a hair's
+  // neighbours were picture 35 times in 38 on the lab's shrunk copies, and the growth ran through the shadow noise of a
+  // 16 MP Tri-X scan, 1,163 pieces)
+  const smallScan = p.res_guard && Math.max((W * H) / 1e6, p.res_scan_mp || 0) < p.res_full_mp;
+  for (let it = 0; it < (smallScan ? 0 : 3); it++) {
     let grew = false;
     for (const g of [...accepted].filter((a) => feats.get(a).kind === "hair/fibre")) {
       const f = feats.get(g), e = p.absorb_px + 2;
@@ -927,6 +978,13 @@ async function find(ctx, bright) {
     if (!grew) break;
   }
 
+  // small scans: nothing bigger than dust ever is, nothing on the frame line
+  for (const g of [...accepted]) {
+    const f = feats.get(g);
+    const plain = f.kind !== "hair/fibre" && f.detail != null && f.busy != null && f.detail <= p.res_plain_detail && f.busy <= p.res_plain_busy;
+    const why = resGuard(p, W, H, f.x0, f.y0, f.x1, f.y1, f.area, f.kind === "hair/fibre" ? "hair" : "dust", plain);
+    if (why) { keepPhoto(f, why); accepted.delete(g); }
+  }
   let mask = new Uint8Array(N);
   if (accepted.size) {
     let maxG = 0;
@@ -1556,6 +1614,8 @@ async function softDebris(ctx, maps, zz, bright, seeds, taken) {
         continue;
       }
       for (const g of res.Rg) done[g] = 1;
+      const gw = res.fill ? softGuard(p, ctx, maps.sigma_level, W, H, res.rec, res.fill.length) : "";
+      if (gw) { res.rec.verdict = "keep-photo"; res.rec.why = gw; continue; }
       if (res.fill) for (const g of res.fill) out[g] = 1;
       continue;
     }
@@ -1580,10 +1640,14 @@ async function softDebris(ctx, maps, zz, bright, seeds, taken) {
       continue;
     }
     const wn = res.win, ww = wn.x1 - wn.x0, hh = wn.y1 - wn.y0;
+    let fillN = 0;
+    if (res.fill) for (let k = 0; k < res.fill.length; k++) fillN += res.fill[k] ? 1 : 0;
+    const gw = res.fill ? softGuard(p, ctx, maps.sigma_level, W, H, res.rec, fillN) : "";
+    if (gw) { res.rec.verdict = "keep-photo"; res.rec.why = gw; }
     for (let y = 0; y < hh; y++) for (let x = 0; x < ww; x++) {
       const k = y * ww + x, gi = (wn.y0 + y) * W + wn.x0 + x;
       if (res.R[k]) done[gi] = 1;
-      if (res.fill && res.fill[k]) out[gi] = 1;
+      if (!gw && res.fill && res.fill[k]) out[gi] = 1;
     }
   }
   ctx.softNet = null;
@@ -1945,6 +2009,8 @@ function softLines(ctx, bright, sig, taken, sharp = []) {
     fv.sort((a, b) => a - b);
     const edge = fv.length ? R.pyRoundTo(fv[Math.floor(0.9 * (fv.length - 1))] / (ctx.gradCal * sg * sg), 2) : 0;
     if (edge > p.line_edge_max) { if (dbgBoxes) dbg(j, `crisp (edge ${edge})`); continue; }   // crisp: in focus, so not on the film's base side (print, a logo, a glint)
+    const gres = resGuard(p, W, H, xmin + x0, ymin + y0, xmax + x0, ymax + y0, L * (2 * pyRound(2 * scale) + 1), "line");
+    if (gres) { if (dbgBoxes) dbg(j, gres); continue; }
     if (dbgBoxes) dbg(j, `${isTinted ? "TINTED, handed on" : "TAKEN"} (busy ${busy} detail ${detail} bow ${bow} reach ${reach} two ${two} edge ${edge} white ${white})`);
     const band = F.dilateMask(sk, w, h, 2 * rad + 1, true);
     if (isTinted) {
@@ -2098,4 +2164,4 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
   return { mask, core, marks, outside, box, polarities: use.map((b) => (b ? "bright" : "dark")), tintedLines };
 }
 
-module.exports = { detect, find, softStage, softDebris, traceRidge, BlobField, drawLine, _ridgeMaps: ridgeMaps };
+module.exports = { detect, find, softStage, softDebris, traceRidge, BlobField, drawLine, resGuard, _ridgeMaps: ridgeMaps };

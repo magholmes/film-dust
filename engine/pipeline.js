@@ -8,7 +8,8 @@
 // returned mask are never changed.
 //
 // hooks: progress(fraction, words) · tick() -> Promise (yield to the host; throw to cancel) · log(text)
-const { detect } = require("./detect");
+const DT = require("./detect");
+const { detect } = DT;
 const { heal } = require("./heal");
 const { DEFAULTS } = require("./maps");
 
@@ -69,6 +70,8 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
     // Photoshop's Select Subject at the working size (Uint8Array, 1 = subject), or null
     subject: opts.subject || null,
   };
+  // the scan's own size when this is a working copy of a bigger one (engine/scale.js): the small-scan guard goes by it
+  if (opts.scanMp) base.res_scan_mp = opts.scanMp;
   // engine settings for experiments (test/run_scan.js --params '{"learned_lo": 0.5}'); the panel passes none
   if (opts.params) Object.assign(base, opts.params);
   const plan = makePlan(base.polarity, passes, healing);
@@ -108,6 +111,8 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
       if (c.net !== null && c.net < DS.netNeeded(c, P)) continue;
       const b = DS.bumpFit(img, W, H, C, c, r1.core, r1.outside);
       if (!b.ok) continue;
+      // small scans: no disc bigger than dust ever is, none on the frame line (detect.js resGuard)
+      if (DT.resGuard(P, W, H, c.cx - c.r, c.cy - c.r, c.cx + c.r, c.cy + c.r, Math.PI * c.r * c.r, "disc")) continue;
       const m = DS.mark(c, "defect", "a faint soft disc on smooth ground (out-of-focus dust), its veil taken away");
       discs.push(m); marks.push(m); bumps.set(m, b);
     }
@@ -128,6 +133,7 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
       const b = DS.bumpShape(img, W, H, C, c, r1.core, r1.outside);
       // the same dust as a veil already taken (two candidates on discs run together) is not taken twice
       if (!b.ok || DS.overlap(b, [...bumps.values()]) > 0.1) continue;
+      if (DT.resGuard(P, W, H, b.box[0], b.box[1], b.box[2], b.box[3], Math.PI * c.r * c.r, "disc")) continue;
       const m = Object.assign(DS.mark(c, "defect", isFibre ? "a soft fibre of the scan's own dust colour, its veil taken away in its own shape"
         : isNear ? "a small soft disc, or one beside an edge, of the scan's own dust colour, its veil taken away in its own shape"
         : "soft dust run together or a soft fibre, of the scan's own dust colour, its veil taken away in its own shape"), { x0: b.box[0], y0: b.box[1], x1: b.box[2], y1: b.box[3] });
@@ -148,7 +154,7 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
         const R = DS.fibreRadius(m);
         const b = DS.bumpShape(img, W, H, C, { cx: m.cx, cy: m.cy, r: R }, r1.core, r1.outside);
         const how = DS.fibreTake(b, pop, P);
-        if (!how) continue;
+        if (!how || DT.resGuard(P, W, H, m.x0, m.y0, m.x1, m.y1, 0, "hair")) continue;
         m.fibre = how;
         // healed like a speck, its halo with it (a sixth of its fine peak, one dilation wider than the detector's)
         m.verdict = "defect"; m.why = "a fibre of the scan's own dust colour, healed like a speck";
@@ -169,6 +175,7 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
       const dilate = base.dilate ?? DEFAULTS.dilate;
       for (const t of r1.tintedLines) {
         if (t.mark.detail > (P.line_colour_detail ?? 0.2)) continue;
+        if (DT.resGuard(P, W, H, t.mark.x0, t.mark.y0, t.mark.x1, t.mark.y1, 0, "line")) continue;
         const v = t.lift.map((l, i) => l / Math.max(t.ground[i], 1e-3)), n = Math.hypot(v[0], v[1], v[2]);
         if (!(n > 0) || v.some((x) => x <= 0)) continue;
         const u = v.map((x) => x / n);
@@ -234,6 +241,9 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
   if (fibreDiscs) stats.discs_fibre = fibreDiscs;
   if (fibres) stats.fibres = fibres;
   if (tintedTaken) stats.soft_fibres_tinted = tintedTaken;
+  // a scan under res_full_mp: the size guard is on and only clear dust is taken (the panel says so)
+  const scanMp = Math.max(W * H / 1e6, P.res_scan_mp || 0);
+  if (P.res_guard && scanMp < P.res_full_mp) stats.small_scan = Math.round(scanMp * 10) / 10;
   // mask: everything that changed (the layer's mask); healMask: the patch heals only; discBumps: the veils taken
   // away, for healing a large scan at full size (engine/discs.js subtractFull)
   return { mask, healMask, discBumps, marks, doubtful: doubt, outside: r1.outside, polarities: r1.polarities, stats };

@@ -20,7 +20,7 @@ const S = require("../engine/scale");
   const [H, W, C] = full.shape, [Hd, Wd] = half.shape;
   const k = 2;
   const work = Uint16Array.from(half.data);
-  const res = await cleanScan(work, Wd, Hd, C, { heal: true }, { tick: () => new Promise((r) => setImmediate(r)) });
+  const res = await cleanScan(work, Wd, Hd, C, { heal: true, scanMp: (W * H) / 1e6 }, { tick: () => new Promise((r) => setImmediate(r)) });
   console.log(`working copy ${Wd}x${Hd}: ${res.stats.healed} marks (${JSON.stringify(res.stats.by_kind)})`);
   assert(res.stats.healed > 0, "no marks found in the test crop");
 

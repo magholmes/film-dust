@@ -428,7 +428,7 @@ async function run() {
       words = "finding the subject"; show();
       subject = await readSubject(ctx, doc, src, tick);
       const span = big ? 0.72 : 0.9;
-      result = await cleanScan(src.img, src.W, src.H, src.C, Object.assign({ heal: true, subject }, SETTINGS), {
+      result = await cleanScan(src.img, src.W, src.H, src.C, Object.assign({ heal: true, subject, scanMp: (W * H) / 1e6 }, SETTINGS), {
         tick, progress: (f, w) => { frac = 0.08 + span * f; words = big ? w.replace(/^healing/, "healing a working copy") : w; },
       });
       if (!result.stats.healed) return;   // nothing found: the document stays exactly as it was
@@ -483,7 +483,9 @@ async function run() {
   // fibres taken for having the scan’s own dust colour: crisp ones left as soft, soft lines left as tinted, and soft
   // fibres among the faint discs
   const nf = (s.fibres || 0) + (s.soft_fibres_tinted || 0) + (s.discs_fibre || 0);
-  const note = nf ? ` · ${nf} fibre${nf > 1 ? "s" : ""} of the scan’s own dust colour` : "";
+  // a small scan (a lab scan, a web copy) gets the careful rules (maps.js res_guard): say so, with its size
+  const note = (nf ? ` · ${nf} fibre${nf > 1 ? "s" : ""} of the scan’s own dust colour` : "")
+    + (s.small_scan ? ` · small scan (${s.small_scan} MP): only clear dust is taken` : "");
   if (!s.healed) status("no dust found · nothing was changed" + note, "done");
   else if (s.doubtful && !result.doubtLayerFailed) status(`${thousands(s.healed)} marks healed · ${s.doubtful} doubtful ringed on the hidden layer “doubtful spots” · paint black on the “dust removed” mask to bring one back` + note, "done");
   else status(`${thousands(s.healed)} marks healed · new layer “dust removed” · paint black on its mask to bring one back` + note, "done");

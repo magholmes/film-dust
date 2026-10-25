@@ -54,6 +54,20 @@ const DEFAULTS = {
   // ... and a crisp fibre the detector left only as soft or tinted, of that colour, on smooth ground and bright all
   // through: healed like a speck (7285's wavy fibre on the shirt; 4 fibres on 30 scans, all dust)
   fibre_rescue: true,
+  // small scans (under res_full_mp by the scan's own size, res_scan_mp when the panel finds dust on a copy of a bigger one;
+  // lab scans, web copies): a heal bigger than dust ever is at full
+  // size (res_cap_area px at res_ref_mp, faint discs res_cap_disc, scaled by the scan's size) or within res_edge_px of the
+  // scan's edge is the picture or the frame line. 10-24, his photo (2.6 / 6.3 MP) lost a logo, a cap's highlight, an ear
+  // and a jacket's sheen; on lab-style copies of his scans (24-2.6 MP JPEGs) the heals the full-size run never made were
+  // a boat's hull, clouds taken as discs, railings, rings and frame lines. Full-size scans: off (unchanged).
+  // (hairs res_cap_hair, soft fibres res_cap_line: just above the biggest of each healed at full size on 31 scans,
+  // 3,820 and 6,288 px)
+  res_guard: true, res_full_mp: 40, res_ref_mp: 65, res_cap_area: 6000, res_cap_disc: 8000, res_cap_hair: 4000, res_cap_line: 8000, res_edge_px: 10,
+  // ... twice that for a speck on plain ground (detail and busyness at most these): none of the big picture heals on the
+  // lab copies or his photo was on ground this plain; a soft heal on very plain ground (the ring's detail at most
+  // res_soft_plain_detail) gets res_soft_plain_mult times: q_04's Y-shaped flake on a plain sky (2.45 x at 4.3 MP; no soft
+  // heal on the 40 lab copies went past 1.14 x)
+  res_plain_detail: 0.1, res_plain_busy: 1.25, res_plain_mult: 2, res_soft_plain_detail: 0.05, res_soft_plain_mult: 3,
   // 1.8.50: small discs a little short of the plainest ground (noise up to 2, z 6+) and discs with an edge beside them
   // rather than across (what the ring holds beyond a gradient up to 1.5, no step over 3 x the lift), of the dust's
   // colour within 1.5 x the angle (benchmark +3 dust +7 unsure +16 unlabelled, no photo; 30 survey scans: 46 more, every
@@ -411,7 +425,27 @@ function imageBox(Y, W, H, dark = 0.2, frac = 0.65, search = 0.12, step = 4) {
   const c0 = Math.floor(0.2 * w), c1 = Math.floor(0.8 * w), r0 = Math.floor(0.2 * h), r1 = Math.floor(0.8 * h);
   const rowProf = (rev) => { const out = []; for (let i = 0; i < h; i++) { const y = rev ? h - 1 - i : i; let s = 0; for (let x = c0; x < c1; x++) s += d(x, y); out.push(s / (c1 - c0)); } return out; };
   const colProf = (rev) => { const out = []; for (let i = 0; i < w; i++) { const x = rev ? w - 1 - i : i; let s = 0; for (let y = r0; y < r1; y++) s += d(x, y); out.push(s / (r1 - r0)); } return out; };
-  return [inner(rowProf(false), h) * step, H - inner(rowProf(true), h) * step, inner(colProf(false), w) * step, W - inner(colProf(true), w) * step];
+  // past the edge print: the innermost solid dark row (0.9+ dark) within a quarter of the frame, with the rows between it
+  // and the edge mostly dark (0.5+: the rebate and its print) and the next 3% inward picture (under 0.35 dark). 10-24,
+  // q_03: the box stopped at the outermost black strip, so the orange edge codes and "OA" counted as picture and the
+  // learned decision healed them. Unchanged on all 192 of his scans.
+  const past = (prof, n) => {
+    const lim = Math.floor(0.25 * n), side = Math.max(2, Math.ceil(0.03 * n));
+    let best = -1, sum = 0;
+    for (let i = 0; i < lim; i++) {
+      sum += prof[i];
+      if (prof[i] < 0.9 || sum / (i + 1) < 0.5) continue;
+      let s2 = 0;
+      for (let j = i + 1; j <= i + side && j < n; j++) s2 += prof[j];
+      if (s2 / side < 0.35) best = i;
+    }
+    return best + 1;
+  };
+  const edge = (prof, n) => { const a = inner(prof, n); return [a, Math.max(a, past(prof, n))]; };
+  const [t, b, l, r] = [edge(rowProf(false), h), edge(rowProf(true), h), edge(colProf(false), w), edge(colProf(true), w)];
+  const box = [t[1] * step, H - b[1] * step, l[1] * step, W - r[1] * step];
+  box.outer = [t[0] * step, H - b[0] * step, l[0] * step, W - r[0] * step];   // the box as before (without the print)
+  return box;
 }
 
 module.exports = { DEFAULTS, params, lumaFromU16, median8f, opening, outsideMask, noiseByLevel, noiseLocal, busyness, residualMaps, edgeWidth, kindOf, skinLike, imageBox, interp1, median3f };

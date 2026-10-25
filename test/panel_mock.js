@@ -3,7 +3,7 @@
 // a tiny DOM): Remove dust on a synthetic 16-bit scan with dust, then "Learn from my fixes" after
 // painting two heals back on the mask. Catches code errors in the panel's flow; it can't prove that
 // Photoshop accepts each call (only Photoshop can).
-//   node test/panel_mock.js
+//   node test/panel_mock.js      (MOCK_K=2: the big-scan path · MOCK_SMALL=1: judged as the small scan it is)
 const fs = require("fs"), os = require("os"), path = require("path"), Module = require("module");
 
 // ---------- a synthetic scan: grain, a gradient, specks, a hair --------------------------------
@@ -141,6 +141,9 @@ Module._load = function (req, parent, isMain) {
   };
   // MOCK_K=2: pretend the scan is big enough to be found at half size (the full-size healing path)
   if (process.env.MOCK_K) { const Sc = require(path.join(ROOT, "engine", "scale")); Sc.workingFactor = () => Number(process.env.MOCK_K); }
+  // the mock's image is tiny: it stands in for a full-size scan unless MOCK_SMALL=1 (the small-scan guard and the
+  // panel's note about it)
+  if (process.env.MOCK_SMALL !== "1") require(path.join(ROOT, "engine", "maps")).DEFAULTS.res_full_mp = 0;
   require(path.join(ROOT, "panel.js"));
   console.log("engine:", require(path.join(ROOT, "engine", "native")).available() ? "native" : "plain JS", "· version line:", global.document.getElementById("version").textContent);
   const $ = (id) => global.document.getElementById(id);

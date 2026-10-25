@@ -26,7 +26,7 @@ const lap = (() => { let t = Date.now(); return (what) => { const now = Date.now
     yd += S.averageStrip(strip, Wd * k, y1 - y0, C, k, work, Wd, yd, false);
   }
   lap(`average to ${Wd} x ${Hd} (k ${k})`);
-  const res = await cleanScan(work, Wd, Hd, C, { heal: true }, { tick: () => new Promise((r) => setImmediate(r)) });
+  const res = await cleanScan(work, Wd, Hd, C, { heal: true, scanMp: (W * H) / 1e6 }, { tick: () => new Promise((r) => setImmediate(r)) });
   lap(`find + heal the working copy: ${res.stats.healed} marks`);
   let reads = 0, writes = 0;
   const io = {
