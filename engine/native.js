@@ -8,13 +8,16 @@
 // cheap otherwise: the native side keeps its worker threads, and small jobs run on the calling thread).
 const MIN_PX = 1 << 12;
 
+let loadError = null;   // why the hybrid addon didn't load in Photoshop (the panel writes it to PluginData/native.txt)
+
 function load() {
   let uxp = null;
   try { uxp = require("uxp"); } catch (e) { uxp = null; }
   if (uxp) {
     // a missing or refused addon leaves the JS filters running; say why in Photoshop's UXP log (Logs/UXPLogs_*.log)
     try { return require("filmdust.uxpaddon"); } catch (e) {
-      try { console.error("film dust: native addon not loaded:", String((e && e.message) || e)); } catch (e2) { /* no console */ }
+      loadError = String((e && (e.stack || e.message)) || e);
+      try { console.error("film dust: native addon not loaded:", loadError); } catch (e2) { /* no console */ }
       return null;
     }
   }
@@ -290,7 +293,7 @@ function averageStrip(src, srcW, rows, C, k, dst, Wd, yd0, eight) {
 }
 
 module.exports = {
-  available: () => !!N, big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
+  available: () => !!N, loadError: () => loadError, big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
   median8f, ellipse, sepConv, box3, boxBlur, sobel, netLoad, netForward,
   blockStats, noiseByLevel, zMaps, npGradient, resizeLinear, label, binMorph, outsideMask,
 };
