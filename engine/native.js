@@ -10,13 +10,37 @@ const MIN_PX = 1 << 12;
 
 let loadError = null;   // why the hybrid addon didn't load in Photoshop (the panel writes it to PluginData/native.txt)
 
+// an error as text, even one with no message (some host errors carry none)
+function why(e) {
+  try {
+    if (e == null) return String(e);
+    const stack = e.stack ? String(e.stack).split(/\r?\n/).slice(0, 3).join(" / ") : "";
+    const t = [e.name, e.message, e.code, stack].filter((x) => x != null && String(x) !== "").map(String);
+    return (t.length ? t.join(" · ") : String(e)) || `${typeof e} with no text`;
+  } catch (e2) {
+    return "an error that can't be read";
+  }
+}
+// what require handed back, for the log
+function shape(m) {
+  try {
+    if (m == null) return String(m);
+    const keys = Object.getOwnPropertyNames(m).slice(0, 12).join(",");
+    return `${typeof m}${typeof m.then === "function" ? " (a promise)" : ""} [${keys}] version: ${typeof m.version}`;
+  } catch (e) {
+    return `${typeof m} (unreadable: ${why(e)})`;
+  }
+}
+
+let inUxp = false;
 function load() {
   let uxp = null;
   try { uxp = require("uxp"); } catch (e) { uxp = null; }
   if (uxp) {
-    // a missing or refused addon leaves the JS filters running; say why in Photoshop's UXP log (Logs/UXPLogs_*.log)
+    inUxp = true;
+    // a missing or refused addon leaves the JS filters running; the panel writes why to PluginData/native.txt
     try { return require("filmdust.uxpaddon"); } catch (e) {
-      loadError = String((e && (e.stack || e.message)) || e);
+      loadError = `require failed: ${why(e)}`;
       try { console.error("film dust: native addon not loaded:", loadError); } catch (e2) { /* no console */ }
       return null;
     }
@@ -30,9 +54,20 @@ function load() {
 }
 
 let N = null;
-try { N = load(); } catch (e) { N = null; }
+try { N = load(); } catch (e) { N = null; if (inUxp) loadError = `load threw: ${why(e)}`; }
 if (N) {
-  try { if (N.version() < 1) N = null; } catch (e) { N = null; }
+  try {
+    const v = N.version();
+    if (!(v >= 1)) {
+      if (inUxp) loadError = `addon loaded, but version() gave ${typeof v} ${String(v)}; exports ${shape(N)}`;
+      N = null;
+    }
+  } catch (e) {
+    if (inUxp) loadError = `addon loaded, but version() failed: ${why(e)}; exports ${shape(N)}`;
+    N = null;
+  }
+} else if (inUxp && !loadError) {
+  loadError = "require returned nothing";
 }
 
 const big = (w, h) => !!N && w * h >= MIN_PX;
@@ -45,6 +80,7 @@ function call(fn) {
     return fn();
   } catch (e) {
     try { console.error("film dust: native filters off for this session", e); } catch (e2) { /* no console */ }
+    loadError = `loaded, then switched off mid-run: ${why(e)}`;
     N = null;
     return null;
   }

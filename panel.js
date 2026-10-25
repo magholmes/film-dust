@@ -45,16 +45,20 @@ function showEngine() {
 showEngine();
 
 // whether the native filters loaded here, and if not why, in PluginData/native.txt (Photoshop keeps no plugin console
-// log): the hybrid addon showed no "native" in Photoshop 2026 and nothing said why
-(async () => {
+// log): the hybrid addon showed no "native" in Photoshop 2026 and nothing said why. Written when the panel opens and
+// again after each run, so a switch-off mid-run shows too.
+async function recordEngine() {
   try {
     const NATV = require("./engine/native"), uxp = require("uxp");
     const folder = await uxp.storage.localFileSystem.getDataFolder();
     const file = await folder.createFile("native.txt", { overwrite: true });
     const said = NATV.available() ? "native loaded" : `native not loaded: ${NATV.loadError() || "no addon (plain build)"}`;
-    await file.write(`${new Date().toISOString()} · ${versionText} · ${said} · uxp ${JSON.stringify(uxp.versions || {})}\n`);
+    let host = "";
+    try { host = `uxp ${uxp.versions.uxp} · photoshop ${uxp.host.version} · ${uxp.host.os || ""}`; } catch (e) { host = "uxp ?"; }
+    await file.write(`${new Date().toISOString()} · ${versionText} · ${said} · ${host}\n`);
   } catch (e) { /* no data folder: nothing to record */ }
-})();
+}
+recordEngine();
 
 // ---------- status line --------------------------------------------------------------------
 
@@ -507,6 +511,7 @@ async function run() {
   }
   setBusy(false);
   showEngine();
+  recordEngine();
   const s = result.stats;
   $("results").hidden = false;
   $("r-healed").textContent = thousands(s.healed);
