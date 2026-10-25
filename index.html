@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html data-mode="desktop">
+<head>
+  <meta charset="utf-8">
+  <title>film dust</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="band">
+    <span class="name">film dust</span>
+    <span class="meta" id="version">1.0.0</span>
+  </header>
+
+  <main class="rows">
+    <p class="lede">Finds the dust, hairs and fibres on the film and heals them with the scan’s own grain, on a new layer.</p>
+
+    <div class="actions">
+      <button class="btn btn--wide" id="remove">Remove dust</button>
+    </div>
+
+    <div class="results" id="results" hidden>
+      <div class="result"><span class="label">healed</span><span class="figure" id="r-healed">0</span></div>
+      <div class="result"><span class="label">hairs</span><span class="figure" id="r-hairs">0</span></div>
+      <div class="result"><span class="label">soft dust</span><span class="figure" id="r-soft">0</span></div>
+      <div class="result"><span class="label">faint discs</span><span class="figure" id="r-discs">0</span></div>
+      <div class="result"><span class="label">left alone</span><span class="figure" id="r-kept">0</span></div>
+      <div class="result"><span class="label">doubtful</span><span class="figure" id="r-doubt">0</span></div>
+      <div class="result"><span class="label">subject</span><span class="figure" id="r-subject">none found</span></div>
+      <div class="result"><span class="label">looked at</span><span class="figure" id="r-scale">full size</span></div>
+      <div class="result"><span class="label">took</span><span class="figure" id="r-time">0:00</span></div>
+    </div>
+
+    <div class="actions" id="after" hidden>
+      <button class="btn btn--wide btn--edge" id="learn">Learn from my fixes</button>
+    </div>
+  </main>
+
+  <footer class="status" id="status" role="status" aria-live="polite">open a scan to begin</footer>
+
+  <script src="panel.js"></script>
+</body>
+</html>
