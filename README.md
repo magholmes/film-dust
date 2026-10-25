@@ -47,6 +47,8 @@ Where the crops came from.
 
 It leaves catchlights, reflections, sun through leaves and other highlights alone.
 
+It was trained on about 180 film scans and 90 digital photos, so it's seen a lot of dust, and a lot of things that only look like dust.
+
 ## How to use it
 
 1. Open a scan in Photoshop.
