@@ -53,7 +53,7 @@ async function recordEngine() {
     await NATV.ready();
     const folder = await uxp.storage.localFileSystem.getDataFolder();
     const file = await folder.createFile("native.txt", { overwrite: true });
-    const said = NATV.available() ? "native loaded" : `native not loaded: ${NATV.loadError() || "no addon (plain build)"}`;
+    const said = NATV.available() ? `native loaded${NATV.note && NATV.note() ? ` (${NATV.note()})` : ""}` : `native not loaded: ${NATV.loadError() || "no addon (plain build)"}`;
     let host = "";
     try { host = `uxp ${uxp.versions.uxp} · photoshop ${uxp.host.version} · ${uxp.host.os || ""}`; } catch (e) { host = "uxp ?"; }
     await file.write(`${new Date().toISOString()} · ${versionText} · ${said} · ${host}\n`);

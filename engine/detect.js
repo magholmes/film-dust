@@ -364,6 +364,9 @@ async function find(ctx, bright) {
   const tm = { t: Date.now(), parts: [] };
   const lap = (name) => { const now = Date.now(); tm.parts.push(name + " " + ((now - tm.t) / 1000).toFixed(1)); tm.t = now; };
   const maps = await M.residualMaps(Y, W, H, bright, outside, cache, (f) => tick(0.6 * f));
+  // the last polarity's maps are made: the grain maps both shared (medians, residual, noise) are done with, so they
+  // go before its judging (the maps a result keeps are its own references)
+  if (ctx.lastMaps) for (const key of Object.keys(cache)) delete cache[key];
   const zs = maps.z_s, zl = maps.z_l, zx = maps.z_xl, sigLevel = maps.sigma_level;
   const z = new Float32Array(N), seeds = new Uint8Array(N);
   {
@@ -2121,9 +2124,11 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
     stage(b ? "white" : "black");
     // find() stops judging dark early when it can't reach the need
     ctx.darkNeed = !b && p.polarity === "auto" && p.polarity_stop !== false && results.has(true) ? darkNeedOf(results.get(true).strong) : 0;
+    ctx.lastMaps = b === pols[pols.length - 1];
     results.set(b, await find(ctx, b));
     ctx.darkNeed = 0;
   }
+  ctx.lastMaps = false;
   let use;
   if (p.polarity === "auto" && results.size === 2) {
     const nb = results.get(true).strong, nd = results.get(false).strong;

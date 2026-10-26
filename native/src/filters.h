@@ -13,8 +13,13 @@ namespace fd {
 int threads();
 void set_threads(int n);
 void set_threads_local(int n);   // per calling thread (0 = the global setting)
-// fn(a, b) over [0, n) in t chunks on the persistent workers (pool.cpp); shutdown_pool joins them
-void run_parallel(int n, int t, const std::function<void(int, int)>& fn);
+// fn(a, b) over [0, n) on t threads of the persistent workers (pool.cpp), in `chunks` pieces (at least t) taken
+// by whichever thread is free; shutdown_pool joins them
+void run_parallel(int n, int t, const std::function<void(int, int)>& fn, int chunks = 0);
+// fn over [0, n) items (rows, columns, blocks) costing about `cost` each (pixels touched, times the kernel size
+// where there is one), on as many threads as the work fills: at least min_items items and 64k of cost a thread.
+// A small job (a mark's window) runs on the calling thread instead of waking the whole pool for microseconds.
+void parallel_rows(int n, int64_t cost, const std::function<void(int, int)>& fn, int min_items = 32);
 void shutdown_pool();
 
 // cv2.medianBlur on 8-bit (REPLICATE border), Huang's sliding histogram as filters.js median8
@@ -23,6 +28,8 @@ void median8(const uint8_t* src, int w, int h, int k, uint8_t* dst);
 void median8f(const float* Y, int w, int h, int k, float* out);
 // filters.js ellipseMorph (hw: the ellipse's half-width per row offset, -1 = unused)
 void ellipse_morph(const float* src, int w, int h, int k, const int32_t* hw, bool is_max, float* dst);
+// the same, always in the JS's own order of comparisons (tests compare the two)
+void ellipse_rows(const float* src, int w, int h, int k, const int32_t* hw, bool is_max, float* dst);
 // filters.js ellipseOpenClose: open = erode then dilate (bright), close = dilate then erode (dark)
 void ellipse_open_close(const float* src, int w, int h, int k, const int32_t* hw, bool open, float* dst);
 // filters.js convolveRows + convolveCols with a symmetric float32 kernel (Gaussian FIR path)
@@ -33,6 +40,8 @@ void box3(const float* src, int w, int h, const int32_t* radii, int npass, float
 void box_blur(const float* src, int w, int h, int k, float* dst);
 // filters.js sobel (ksize 3, REFLECT_101)
 void sobel(const float* src, int w, int h, int dx, int dy, float* dst);
+// rows [y0, y1) of it into out (row y at out + (y - y0) w); tmp: (y1 - y0 + 2) x w floats of scratch
+void sobel_rows(const float* src, int w, int h, int dx, int dy, int y0, int y1, float* out, float* tmp);
 // V8's Math.hypot for two numbers (normalised by the larger, Kahan-summed squares), bit for bit
 inline double v8_hypot(double a, double b) {
     a = std::fabs(a); b = std::fabs(b);

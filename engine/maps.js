@@ -363,7 +363,9 @@ async function residualMaps(Y, W, H, bright, outside, cache = {}, tick = async (
   const busy = busyness(resid, valid, W, H, bright);
   lap("busy");
   await tick(0.8);
-  const natZ = NAT.big(W, H) && outside instanceof Uint8Array ? NAT.zMaps(Y, m15, o15, m41, o41, bxl, sigma, outside, bright) : null;
+  // natively the z maps are written over o15, o41 and bxl (not needed after this), so no new maps are made
+  const natZ = NAT.big(W, H) && outside instanceof Uint8Array
+    ? NAT.zMapsInto(Y, m15, o15, m41, o41, bxl, sigma, outside, bright) || NAT.zMaps(Y, m15, o15, m41, o41, bxl, sigma, outside, bright) : null;
   if (natZ) {
     const [zs, zl, zx] = natZ;
     lap("z");

@@ -9,47 +9,9 @@
 #include <vector>
 
 #include "filters.h"
+#include "stats.h"
 
 namespace fd {
-
-static void par(int n, const std::function<void(int, int)>& fn, int min_chunk = 32) {
-    int t = std::min(threads(), std::max(1, n / std::max(1, min_chunk)));
-    if (t <= 1) {
-        fn(0, n);
-        return;
-    }
-    run_parallel(n, t, fn);
-}
-
-// regions.js selectK / medianOf on the first n values (reorders them)
-static double kth(double* a, int n, int k) {
-    std::nth_element(a, a + k, a + n);
-    return a[k];
-}
-
-static double median_of(double* a, int n) {
-    if (!n) return NAN;
-    const int h = (n - 1) >> 1;
-    const double v = kth(a, n, h);
-    if (n % 2) return v;
-    double u = INFINITY;
-    for (int i = h + 1; i < n; i++)
-        if (a[i] < u) u = a[i];
-    return (v + u) / 2;
-}
-
-// regions.js percentile(arr, 50) == median(): vlo + (vhi - vlo) * (pos - lo)
-static double median_pct(double* a, int n) {
-    if (!n) return NAN;
-    const double pos = (50.0 / 100) * (n - 1);
-    const int lo = (int)std::floor(pos), hi = (int)std::ceil(pos);
-    const double vlo = kth(a, n, lo);
-    if (hi == lo) return vlo;
-    double vhi = INFINITY;
-    for (int i = lo + 1; i < n; i++)
-        if (a[i] < vhi) vhi = a[i];
-    return vlo + (vhi - vlo) * (pos - lo);
-}
 
 // maps.js blockStat + noiseLocal's / busyness's per-block statistic.
 // mode 0: noiseLocal (1.4826 x MAD over valid pixels, NaN when none); mode 1: busyness T
@@ -57,7 +19,7 @@ void block_stats(const float* resid, const uint8_t* valid, int W, int H, int blo
     const int hb = std::max(1, H / block), wb = std::max(1, W / block);
     const int n = block * block;
     const double sgn = bright ? 1 : -1;
-    par(hb * wb, [&](int a, int b) {
+    parallel_rows(hb * wb, (int64_t)n * 8, [&](int a, int b) {
         std::vector<double> vals(n), buf(n);
         std::vector<uint8_t> vok(n);
         for (int bi = a; bi < b; bi++) {
@@ -115,14 +77,14 @@ void noise_by_level(const float* bg, const float* resid, const uint8_t* valid, i
             buckets[l].push_back(resid[i]);
         }
     std::vector<double> sig(bins, NAN);
-    par(bins, [&](int a, int b) {
+    parallel_rows(bins, 1 << 16, [&](int a, int b) {
         for (int k = a; k < b; k++) {
             auto& rb = buckets[k];
             if ((int)rb.size() > 400) {
                 std::vector<double> c(rb);
-                const double md = median_pct(c.data(), (int)c.size());
+                const double md = percentile(c.data(), (int)c.size(), 50);
                 for (size_t i = 0; i < rb.size(); i++) c[i] = std::fabs(rb[i] - md);
-                sig[k] = 1.4826 * median_pct(c.data(), (int)c.size());
+                sig[k] = 1.4826 * percentile(c.data(), (int)c.size(), 50);
             }
         }
     }, 1);
@@ -157,7 +119,7 @@ void noise_by_level(const float* bg, const float* resid, const uint8_t* valid, i
     std::vector<double> xs(bins);
     for (int i = 0; i < bins; i++) xs[i] = (i + 0.5) / bins;
     const double x0 = xs[0], xl = xs[bins - 1];
-    par(H, [&](int ya, int yb) {
+    parallel_rows(H, W, [&](int ya, int yb) {
         for (int64_t i = (int64_t)ya * W; i < (int64_t)yb * W; i++) {
             const double x = bg[i];
             if (x <= x0) { out[i] = (float)med3[0]; continue; }
@@ -178,7 +140,7 @@ void z_maps(const float* Y, const float* m15, const float* o15, const float* m41
     const double sgn = bright ? 1 : -1;
     const int64_t chunk = 1 << 16;
     const int nchunks = (int)((N + chunk - 1) / chunk);
-    par(nchunks, [&](int a, int b) {
+    parallel_rows(nchunks, chunk, [&](int a, int b) {
         for (int64_t i = (int64_t)a * chunk; i < std::min(N, (int64_t)b * chunk); i++) {
             const float b15 = bright ? std::max(m15[i], o15[i]) : std::min(m15[i], o15[i]);
             const float bb = bright ? std::max(m41[i], o41[i]) : std::min(m41[i], o41[i]);
@@ -195,7 +157,7 @@ void z_maps(const float* Y, const float* m15, const float* o15, const float* m41
 
 // filters.js npGradient: [gy, gx], central differences inside, one-sided at the edges
 void np_gradient(const float* src, int w, int h, float* gy, float* gx) {
-    par(h, [&](int ya, int yb) {
+    parallel_rows(h, w, [&](int ya, int yb) {
         for (int y = ya; y < yb; y++) {
             const int64_t off = (int64_t)y * w;
             for (int x = 0; x < w; x++) {
@@ -213,7 +175,7 @@ void np_gradient(const float* src, int w, int h, float* gy, float* gx) {
 // filters.js resizeLinear (cv2.resize INTER_LINEAR)
 void resize_linear(const float* src, int sw, int sh, int dw, int dh, float* dst) {
     const double fx = (double)sw / dw, fy = (double)sh / dh;
-    par(dh, [&](int ya, int yb) {
+    parallel_rows(dh, (int64_t)dw * 2, [&](int ya, int yb) {
         for (int y = ya; y < yb; y++) {
             double sy = (y + 0.5) * fy - 0.5;
             if (sy < 0) sy = 0;
@@ -243,27 +205,25 @@ namespace fd {
 // detect.js ridgeMaps (soft fibres): bright-line strength at each scale against the local grain, the
 // strongest per pixel and the scale it came from; float32 arithmetic exactly as the JS writes it.
 // kers: the Gaussian kernels from filters.js gaussKernel, one after another (klens long).
+// Memory: the blurred image and its second derivative along x are kept whole (the scale's grain constant k is a
+// median over the whole image's x derivative); the other two derivatives are made a band of rows at a time.
 void ridge_maps(const float* Y, int W, int H, const uint8_t* outside, bool bright, const float* sig, int ns,
                 const double* scales, const float* kers, const int32_t* klens, float* best, float* bestS) {
     const int64_t N = (int64_t)W * H;
     std::fill(best, best + N, 0.0f);
     std::fill(bestS, bestS + N, 0.0f);
     const float tiny = (float)1e-5, c1 = (float)1.4826;
-    std::vector<float> g(N), xx(N), yy(N), xy(N);
+    const int band = 256;
+    std::vector<float> g(N), xx(N), yy((size_t)W * std::min(H, band)), xy((size_t)W * std::min(H, band)),
+        tmp((size_t)W * (std::min(H, band) + 2));
     size_t koff = 0;
     for (int si = 0; si < ns; si++) {
         const double s = scales[si];
         sep_conv(Y, W, H, kers + koff, klens[si], g.data());
         koff += klens[si];
         sobel(g.data(), W, H, 2, 0, xx.data());
-        sobel(g.data(), W, H, 0, 2, yy.data());
-        sobel(g.data(), W, H, 1, 1, xy.data());
         if (!bright)
-            for (int64_t i = 0; i < N; i++) {
-                xx[i] = -xx[i];
-                yy[i] = -yy[i];
-                xy[i] = -xy[i];
-            }
+            for (int64_t i = 0; i < N; i++) xx[i] = -xx[i];
         const float s2 = (float)(s * s);
         std::vector<float> samp;
         for (int y = 0; y < H; y += 5)
@@ -290,28 +250,33 @@ void ridge_maps(const float* Y, int W, int H, const uint8_t* outside, bool brigh
             }
         }
         const float sf = (float)s;
-        const int64_t chunk = 1 << 16;
-        const int nchunks = (int)((N + chunk - 1) / chunk);
-        par(nchunks, [&](int ca, int cb) {
-            for (int64_t i = (int64_t)ca * chunk; i < std::min(N, (int64_t)cb * chunk); i++) {
-                const float tr = (float)((double)xx[i] + (double)yy[i]);
-                const float hh = (float)((double)tr / 2);
-                const float det = (float)((double)(float)((double)xx[i] * (double)yy[i]) - (double)(float)((double)xy[i] * (double)xy[i]));
-                const float hh2 = (float)((double)hh * (double)hh);
-                const float dd = (float)((double)hh2 - (double)det);
-                const float disc = (float)std::sqrt(std::max((double)dd, 0.0));
-                const float a = (float)((double)hh - (double)disc);
-                const float b = (float)((double)hh + (double)disc);
-                const float e = (float)(-(double)a - std::fabs((double)b));
-                const float r = (float)(std::max((double)e, 0.0) * (double)s2);
-                const float den = (float)((double)k * (double)std::max(sig[i], tiny));
-                const float z = (float)((double)r / (double)den);
-                if (z > best[i]) {
-                    best[i] = z;
-                    bestS[i] = sf;
+        for (int y0 = 0; y0 < H; y0 += band) {
+            const int y1 = std::min(H, y0 + band);
+            sobel_rows(g.data(), W, H, 0, 2, y0, y1, yy.data(), tmp.data());
+            sobel_rows(g.data(), W, H, 1, 1, y0, y1, xy.data(), tmp.data());
+            parallel_rows(y1 - y0, (int64_t)W * 8, [&](int ra, int rb) {
+                for (int64_t q = (int64_t)ra * W; q < (int64_t)rb * W; q++) {
+                    const int64_t i = (int64_t)y0 * W + q;
+                    const float yv = bright ? yy[q] : -yy[q], xv = bright ? xy[q] : -xy[q];
+                    const float tr = (float)((double)xx[i] + (double)yv);
+                    const float hh = (float)((double)tr / 2);
+                    const float det = (float)((double)(float)((double)xx[i] * (double)yv) - (double)(float)((double)xv * (double)xv));
+                    const float hh2 = (float)((double)hh * (double)hh);
+                    const float dd = (float)((double)hh2 - (double)det);
+                    const float disc = (float)std::sqrt(std::max((double)dd, 0.0));
+                    const float a = (float)((double)hh - (double)disc);
+                    const float b = (float)((double)hh + (double)disc);
+                    const float e = (float)(-(double)a - std::fabs((double)b));
+                    const float r = (float)(std::max((double)e, 0.0) * (double)s2);
+                    const float den = (float)((double)k * (double)std::max(sig[i], tiny));
+                    const float z = (float)((double)r / (double)den);
+                    if (z > best[i]) {
+                        best[i] = z;
+                        bestS[i] = sf;
+                    }
                 }
-            }
-        }, 1);
+            });
+        }
     }
     for (int64_t i = 0; i < N; i++)
         if (outside[i]) best[i] = 0.0f;

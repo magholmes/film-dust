@@ -8,39 +8,13 @@
 #include <vector>
 
 #include "filters.h"
+#include "stats.h"
 
 namespace fd {
 
 namespace {
 
 int count(const std::vector<uint8_t>& m) { int n = 0; for (uint8_t v : m) n += v ? 1 : 0; return n; }
-
-// regions.js percentile: numpy's linear interpolation between the order statistics at floor / ceil of q% x (n-1)
-double percentile(std::vector<double>& a, double q) {
-    const int n = (int)a.size();
-    if (!n) return NAN;
-    const double pos = (q / 100) * (n - 1);
-    const int lo = (int)std::floor(pos), hi = (int)std::ceil(pos);
-    std::nth_element(a.begin(), a.begin() + lo, a.end());
-    const double vlo = a[lo];
-    if (hi == lo) return vlo;
-    double vhi = INFINITY;
-    for (int i = lo + 1; i < n; i++) if (a[i] < vhi) vhi = a[i];
-    return vlo + (vhi - vlo) * (pos - lo);
-}
-double median(std::vector<double>& a) { return percentile(a, 50); }
-
-double mean(const std::vector<double>& a) {
-    double s = 0;
-    for (double v : a) s += v;
-    return a.empty() ? NAN : s / a.size();
-}
-double stdev(const std::vector<double>& a) {
-    const double m = mean(a);
-    double s = 0;
-    for (double v : a) { const double d = v - m; s += d * d; }
-    return a.empty() ? NAN : std::sqrt(s / a.size());
-}
 
 std::vector<double> vals(const std::vector<float>& img, const std::vector<uint8_t>& m) {
     std::vector<double> out;
@@ -192,7 +166,7 @@ void solid_batch(const float* Y, const float* sigLevel, const int32_t* glab, con
             area[i] = count(res);
             width[i] = hw_ ? 2 * max_dist(res, w, h) : NAN;
         }
-    });
+    }, n);   // one object a chunk
 }
 
 // Phase 3, per object: marks.js markCues on its window, with cand as the JS loop saw it at that object: cand after
@@ -275,7 +249,7 @@ void cues_batch(const float* Y, const float* G3, const float* E25, const float* 
                 }
             }
         }
-    });
+    }, n);   // one object a chunk
 }
 
 }  // namespace fd

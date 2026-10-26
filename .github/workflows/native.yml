@@ -1,0 +1,57 @@
+# Builds the native filters on Windows, Linux and macOS and checks them against the JS engine: every test compares
+# the C++ result with the JS one bit for bit, on random images and masks (the scans used for the full checks are
+# not in this repository). Windows also runs the plain copies of the kernels that have AVX2 copies.
+name: native
+on:
+  push:
+    paths: ["native/**", "engine/**", "test/**", ".github/workflows/native.yml"]
+  pull_request:
+    paths: ["native/**", "engine/**", "test/**", ".github/workflows/native.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: MinGW-w64 GCC (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+          path-type: inherit
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: bash native/build.sh
+      - name: Build
+        if: runner.os != 'Windows'
+        run: bash native/build.sh
+      - name: Errors come back as JS errors
+        run: node test/native_errors.js
+      - name: Native against JS
+        run: |
+          node test/native_fuzz.js
+          node test/native_masks.js 60
+          node test/native_ellipse.js 12
+          node test/native_bands.js
+      - name: Plain copies of the AVX2 kernels
+        if: runner.os == 'Windows' || runner.os == 'Linux'
+        env:
+          FILMDUST_NO_AVX2: "1"
+        run: |
+          node test/native_fuzz.js
+          node test/native_bands.js
+      - name: Thread pool under load
+        run: node test/native_pool_stress.js 20000

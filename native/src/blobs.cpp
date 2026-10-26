@@ -24,12 +24,6 @@ inline int refl(int i, int n) {   // filters.cpp reflect101
     return i;
 }
 
-void rows(int n, const std::function<void(int, int)>& fn, int min_chunk = 32) {   // filters.cpp parallel_for
-    const int t = std::min(threads(), std::max(1, n / std::max(1, min_chunk)));
-    if (t <= 1) fn(0, n);
-    else run_parallel(n, t, fn);
-}
-
 const double KS[3] = {1, 2, 1}, KD1[3] = {-1, 0, 1}, KD2[3] = {1, -2, 1};
 
 // sobel's first pass on one row: [k0 k1 k2] along x, edges mirrored, rounded to float
@@ -99,7 +93,7 @@ void blob_tiles(const float* Y, const float* sl, int W, int H, int T, double sq,
         float* B = g_b.data();
         float* resp = g_resp.data();
         // the Gaussian (sep_conv on the window's crop, edges mirrored at the window): rows into A, columns into B
-        rows(h, [&](int a, int b) {
+        parallel_rows(h, (int64_t)w * klen, [&](int a, int b) {
             std::vector<float> row(w + 2 * r);
             for (int y = a; y < b; y++) {
                 const float* s = Y + (int64_t)(ya + y) * W + xa;
@@ -113,7 +107,7 @@ void blob_tiles(const float* Y, const float* sl, int W, int H, int T, double sq,
                 }
             }
         });
-        rows(h, [&](int a, int b) {
+        parallel_rows(h, (int64_t)w * klen, [&](int a, int b) {
             std::vector<double> acc(w);
             for (int y = a; y < b; y++) {
                 const size_t oc = (size_t)y * w;
@@ -127,7 +121,7 @@ void blob_tiles(const float* Y, const float* sl, int W, int H, int T, double sq,
             }
         });
         // Lxx (d2 along x, smoothed along y), Lyy (smoothed along x, d2 along y), Lxy (d1, d1) and the response
-        rows(h, [&](int a, int b) {
+        parallel_rows(h, (int64_t)w * 30, [&](int a, int b) {
             std::vector<float> bufs((size_t)9 * w);
             float *d2u = &bufs[0], *d2m = d2u + w, *d2d = d2m + w, *su = d2d + w, *sm = su + w, *sd = sm + w, *d1u = sd + w,
                   *d1m = d1u + w, *d1d = d1m + w;
@@ -154,11 +148,11 @@ void blob_tiles(const float* Y, const float* sl, int W, int H, int T, double sq,
             }
         });
         // its k x k dilation (rect_morph: rows into A, columns into B)
-        rows(h, [&](int a, int b) {
+        parallel_rows(h, (int64_t)w * 3, [&](int a, int b) {
             std::vector<float> P(w + 2 * rm), f(w + 4 * rm + 1), g(w + 4 * rm + 1);
             for (int y = a; y < b; y++) vh_max(resp + (size_t)y * w, w, 1, rm, A + (size_t)y * w, 1, P, f, g);
         });
-        rows(w, [&](int a, int b) {
+        parallel_rows(w, (int64_t)h * 3, [&](int a, int b) {
             std::vector<float> P(h + 2 * rm), f(h + 4 * rm + 1), g(h + 4 * rm + 1);
             for (int x = a; x < b; x++) vh_max(A + x, h, w, rm, B + x, w, P, f, g);
         }, 16);

@@ -7,51 +7,39 @@
 #include "../uxp-sdk/utilities/UxpAddon.h"
 #include "filters.h"
 
-#define ENV addon_env
-#define VAL addon_value
-#define CBINFO addon_callback_info
-#define ARGS(env, info, n)        \
-    size_t argc = n;              \
-    addon_value argv[n] = {};     \
-    UxpAddonApis.uxp_addon_get_cb_info(env, info, &argc, argv, nullptr, nullptr)
+namespace host {
+using Env = addon_env;
+using Val = addon_value;
+using Info = addon_callback_info;
 
-template <typename T>
-static T* ab_ptr(addon_env env, addon_value v, size_t off, size_t n) {
-    void* data = nullptr;
-    size_t len = 0;
-    if (UxpAddonApis.uxp_addon_get_arraybuffer_info(env, v, &data, &len) != addon_ok || !data) return nullptr;
-    if (off + n * sizeof(T) > len) return nullptr;
-    return (T*)((char*)data + off);
+inline bool get_args(Env env, Info info, size_t* argc, Val* argv) {
+    return UxpAddonApis.uxp_addon_get_cb_info(env, info, argc, argv, nullptr, nullptr) == addon_ok;
 }
-#define AB(env, v, off, T, n) ab_ptr<T>(env, v, off, n)
-
-static int i32(addon_env env, addon_value v) {
-    int32_t r = 0;
-    UxpAddonApis.uxp_addon_get_value_int32(env, v, &r);
-    return r;
+inline bool arraybuffer(Env env, Val v, void** data, size_t* len) {
+    return UxpAddonApis.uxp_addon_get_arraybuffer_info(env, v, data, len) == addon_ok;
 }
-static double f64(addon_env env, addon_value v) {
-    double r = 0;
-    UxpAddonApis.uxp_addon_get_value_double(env, v, &r);
-    return r;
+inline bool get_i32(Env env, Val v, int32_t* r) { return UxpAddonApis.uxp_addon_get_value_int32(env, v, r) == addon_ok; }
+inline bool get_f64(Env env, Val v, double* r) { return UxpAddonApis.uxp_addon_get_value_double(env, v, r) == addon_ok; }
+// (a host that left any of these out reads as "no such field": that call fails cleanly)
+inline bool get_named(Env env, Val obj, const char* name, Val* r) {
+    return UxpAddonApis.uxp_addon_get_named_property && UxpAddonApis.uxp_addon_get_named_property(env, obj, name, r) == addon_ok;
 }
-#define I32(env, v) i32(env, v)
-#define F64(env, v) f64(env, v)
-
-static addon_value new_ab(addon_env env, size_t bytes, void** ptr) {
-    addon_value r = nullptr;
-    UxpAddonApis.uxp_addon_create_arraybuffer(env, bytes, ptr, &r);
-    return r;
+inline bool get_element(Env env, Val arr, uint32_t i, Val* r) {
+    bool is = false;
+    return UxpAddonApis.uxp_addon_is_array && UxpAddonApis.uxp_addon_get_element &&
+           UxpAddonApis.uxp_addon_is_array(env, arr, &is) == addon_ok && is && UxpAddonApis.uxp_addon_get_element(env, arr, i, r) == addon_ok;
 }
-#define NEW_AB(env, bytes, pptr) new_ab(env, bytes, pptr)
-
-static addon_value num(addon_env env, double x) {
-    addon_value r = nullptr;
+inline Val new_arraybuffer(Env env, size_t bytes, void** data) {
+    Val r = nullptr;
+    return UxpAddonApis.uxp_addon_create_arraybuffer(env, bytes, data, &r) == addon_ok ? r : nullptr;
+}
+inline Val number(Env env, double x) {
+    Val r = nullptr;
     UxpAddonApis.uxp_addon_create_double(env, x, &r);
     return r;
 }
-#define NUM(env, x) num(env, x)
-#define THROW(env, msg) UxpAddonApis.uxp_addon_throw_error(env, nullptr, msg)
+inline void throw_error(Env env, const char* msg) { UxpAddonApis.uxp_addon_throw_error(env, nullptr, msg); }
+}  // namespace host
 
 #include "glue.inc"
 

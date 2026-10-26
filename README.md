@@ -94,7 +94,7 @@ bash native/build.sh
 node build.js
 ```
 
-The engine is plain JavaScript in `engine/`. The Windows build adds a C++ version of the slowest parts in `native/`, which gives the same results, just faster. Building it needs a GCC toolchain and Adobe's UXP hybrid plugin SDK headers in `native/uxp-sdk/`. They're Adobe's, so they aren't included here. Third-party code is listed in `NOTICES.txt`.
+The engine is plain JavaScript in `engine/`. The Windows build adds a C++ version of the slowest parts in `native/`, which gives exactly the same results, just faster. The tests in `test/native_*.js` compare the two bit for bit, and GitHub runs them on every change. Building the Photoshop part needs a GCC toolchain (MinGW-w64 on Windows) and Adobe's UXP hybrid plugin SDK headers in `native/uxp-sdk/`. They're Adobe's, so they aren't included here. Third-party code is listed in `NOTICES.txt`.
 
 ## Licence
 

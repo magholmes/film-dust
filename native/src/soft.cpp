@@ -8,26 +8,14 @@
 #include <vector>
 
 #include "filters.h"
+#include "stats.h"
 
 namespace fd {
 
 namespace {
 
-// V8's Math.hypot for two numbers (normalised by the larger, Kahan-summed squares, sqrt, scaled back)
-
-// regions.js percentile / percentileOf (selection; numpy's linear interpolation)
-double percentile_of(double* a, int n, double q) {
-    if (!n) return NAN;
-    const double pos = (q / 100) * (n - 1);
-    const int lo = (int)std::floor(pos), hi = (int)std::ceil(pos);
-    std::nth_element(a, a + lo, a + n);
-    const double vlo = a[lo];
-    if (hi == lo) return vlo;
-    double vhi = INFINITY;
-    for (int i = lo + 1; i < n; i++) if (a[i] < vhi) vhi = a[i];
-    return vlo + (vhi - vlo) * (pos - lo);
-}
-double pct(std::vector<double> a, double q) { return percentile_of(a.data(), (int)a.size(), q); }
+// regions.js percentile of a copy (the caller's values keep their order)
+double pct(std::vector<double> a, double q) { return percentile(a, q); }
 
 // the annulus offsets (dy, dx pairs) of rIn <= hypot < ro, rows then columns
 const std::vector<int16_t>& annulus(int rIn, int ro) {
@@ -162,7 +150,7 @@ void soft_batch(const float* Y, const float* sigLevel, const uint16_t* img, int 
                     if (y >= 0 && y < J.hh && x >= 0 && x < J.ww) buf.push_back(J.Yg[(size_t)y * J.ww + x]);
                 }
                 if (buf.size() < 50) break;
-                bg = percentile_of(buf.data(), (int)buf.size(), 50); con = top - bg;
+                bg = percentile(buf.data(), (int)buf.size(), 50); con = top - bg;
                 if (con <= 0) break;
                 const double thr = bg + 0.5 * con;
                 if (!((double)J.Yg[(size_t)qy * J.ww + qx] >= thr)) break;
@@ -337,7 +325,7 @@ void soft_batch(const float* Y, const float* sigLevel, const uint16_t* img, int 
             if (r2ok) lists[(size_t)3 * i + 1] = f2;
             lists[(size_t)3 * i + 2] = std::move(fl);
         }
-    });
+    }, n);   // one seed a chunk
 }
 
 }  // namespace fd

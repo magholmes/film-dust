@@ -47,7 +47,8 @@ function load() {
   }
   try {
     if (typeof process !== "undefined" && process.env && process.env.FILMDUST_NATIVE === "0") return null;
-    return require(require("path").join(__dirname, "..", "native", "build", "filmdust.node"));
+    // FILMDUST_NATIVE_PATH: another build of filmdust.node (tests that compare builds)
+    return require(process.env.FILMDUST_NATIVE_PATH || require("path").join(__dirname, "..", "native", "build", "filmdust.node"));
   } catch (e) {
     return null;
   }
@@ -61,7 +62,10 @@ function checked(m) {
   }
   try {
     const v = m.version();
-    if (v >= 1) return m;
+    if (v >= 1) {
+      named = namedFields(m);
+      return m;
+    }
     if (inUxp) loadError = `addon loaded, but version() gave ${typeof v} ${String(v)}; exports ${shape(m)}`;
   } catch (e) {
     if (inUxp) loadError = `addon loaded, but version() failed: ${why(e)}; exports ${shape(m)}`;
@@ -73,6 +77,17 @@ function checked(m) {
 // the panel wait for that first, so nothing reads N before it is known
 let N = null;
 let readyP = Promise.resolve();
+// blobTiles, ridgeMaps, solidBatch, cuesBatch and softBatch take one object of named fields, which needs two more
+// calls of the host's addon API (an object's field, an array's element): checked once at load. Without them only
+// those five steps run in JS (the panel's native.txt says so).
+let named = false;
+function namedFields(m) {
+  try {
+    return !!m.selfTest && m.selfTest(4, { n: 2, v: [new Float64Array([3]).buffer, 0] }) === 5;
+  } catch (e) {
+    return false;
+  }
+}
 try {
   const m = load();
   if (m && typeof m.then === "function") {
@@ -96,8 +111,10 @@ function call(fn) {
   }
 }
 const asF32 = (a) => (a instanceof Float32Array ? a : Float32Array.from(a));
-const out = (ab, dst) => {
-  const r = new Float32Array(ab);
+// a typed array as the [ArrayBuffer, byteOffset] pair the addon reads (its API has no typed-array accessor)
+const ab = (a) => [a.buffer, a.byteOffset];
+const out = (buf, dst) => {
+  const r = new Float32Array(buf);
   if (!dst) return r;
   dst.set(r);
   return dst;
@@ -180,10 +197,11 @@ function hypotInto(gy, gx) {
 // detect.js BlobField tiles at scale sq, several at once (list: ty, tx pairs): [{ ys, xs, vals, resp, y0, x0, w }]
 // in the order asked, each in its own arrays (so a tile whose response is let go frees it); null: not done
 function blobTiles(Y, sl, W, H, T, sq, sgn, ker, k, mg, list) {
+  if (!named) return null;
   return call(() => {
     if (!N.blobTiles) return null;
     const n = list.length / 2, tl = Int32Array.from(list), K = Float32Array.from(ker);
-    const buf = N.blobTiles(Y.buffer, Y.byteOffset, sl.buffer, sl.byteOffset, W, H, T, sq, sgn, K.buffer, 0, K.length, k, mg, tl.buffer, 0, n);
+    const buf = N.blobTiles({ Y: ab(Y), sl: ab(sl), W, H, T, sq, sgn, ker: ab(K), klen: K.length, k, mg, tiles: ab(tl), n });
     const counts = new Int32Array(buf, 0, n);
     let o = 4 * n;
     const res = [];
@@ -221,16 +239,30 @@ function zMaps(Y, m15, o15, m41, o41, bxl, sigma, outside, bright) {
   return call(() => {
     const n = Y.length, a = [Y, m15, o15, m41, o41, bxl, sigma].map(asF32), args = [];
     for (const v of a) args.push(v.buffer, v.byteOffset);
-    const ab = N.zMaps(...args, outside.buffer, outside.byteOffset, n, bright ? 1 : 0);
-    return [new Float32Array(ab, 0, n), new Float32Array(ab, 4 * n, n), new Float32Array(ab, 8 * n, n)];
+    const res = N.zMaps(...args, outside.buffer, outside.byteOffset, n, bright ? 1 : 0);
+    return [new Float32Array(res, 0, n), new Float32Array(res, 4 * n, n), new Float32Array(res, 8 * n, n)];
+  });
+}
+
+// the same z loop written over o15, o41 and bxl, which the caller then no longer has: [z_s, z_l, z_xl] are those
+// three arrays (each pixel's inputs are read before its results are stored), so no new maps are made
+function zMapsInto(Y, m15, o15, m41, o41, bxl, sigma, outside, bright) {
+  const maps = [Y, m15, o15, m41, o41, bxl, sigma];
+  if (!maps.every((a) => a instanceof Float32Array && a.length === Y.length)) return null;
+  return call(() => {
+    if (!N.zMapsInto) return null;
+    const args = [];
+    for (const v of maps) args.push(v.buffer, v.byteOffset);
+    N.zMapsInto(...args, outside.buffer, outside.byteOffset, Y.length, bright ? 1 : 0);
+    return [o15, o41, bxl];
   });
 }
 
 // filters.js: [gy, gx] and cv2.resize INTER_LINEAR
 function npGradient(src, w, h) {
   return call(() => {
-    const s = asF32(src), n = w * h, ab = N.npGradient(s.buffer, s.byteOffset, w, h);
-    return [new Float32Array(ab, 0, n), new Float32Array(ab, 4 * n, n)];
+    const s = asF32(src), n = w * h, res = N.npGradient(s.buffer, s.byteOffset, w, h);
+    return [new Float32Array(res, 0, n), new Float32Array(res, 4 * n, n)];
   });
 }
 
@@ -244,8 +276,8 @@ function resizeLinear(src, sw, sh, dw, dh) {
 // regions.js label: { lab: Int32Array, n } (the count comes back after the labels)
 function label(mask, w, h, conn) {
   return call(() => {
-    const n = w * h, ab = N.label(mask.buffer, mask.byteOffset, w, h, conn);
-    return { lab: new Int32Array(ab, 0, n), n: new Int32Array(ab, 4 * n, 1)[0] };
+    const n = w * h, res = N.label(mask.buffer, mask.byteOffset, w, h, conn);
+    return { lab: new Int32Array(res, 0, n), n: new Int32Array(res, 4 * n, 1)[0] };
   });
 }
 
@@ -267,15 +299,15 @@ function outsideMask(Y, W, H) {
 
 // detect.js ridgeMaps: { best, bestS } over the given scales (Gaussian kernels from filters.gaussKernel)
 function ridgeMaps(Y, W, H, outside, bright, sig, scales, kernels) {
+  if (!named) return null;
   return call(() => {
     const y = asF32(Y), s = asF32(sig), sc = Float64Array.from(scales), lens = Int32Array.from(kernels.map((k) => k.length));
     const ker = new Float32Array(lens.reduce((a, b) => a + b, 0));
     let o = 0;
     for (const k of kernels) { ker.set(k, o); o += k.length; }
     const n = W * H;
-    const ab = N.ridgeMaps(y.buffer, y.byteOffset, outside.buffer, outside.byteOffset, s.buffer, s.byteOffset, W, H, bright ? 1 : 0,
-      sc.buffer, 0, ker.buffer, 0, lens.buffer, 0, scales.length);
-    return { best: new Float32Array(ab, 0, n), bestS: new Float32Array(ab, 4 * n, n) };
+    const res = N.ridgeMaps({ Y: ab(y), outside: ab(outside), sig: ab(s), W, H, bright: bright ? 1 : 0, scales: ab(sc), kers: ab(ker), klens: ab(lens), ns: scales.length });
+    return { best: new Float32Array(res, 0, n), bestS: new Float32Array(res, 4 * n, n) };
   });
 }
 
@@ -284,37 +316,36 @@ function ridgeMaps(Y, W, H, outside, bright, sig, scales, kernels) {
 // offs. cuesBatch: markCues per object as the JS loop saw cand (the claims sorted by pixel cgi, the claiming object's
 // index cidx); n x 10 doubles, NaN where markCues set nothing.
 function solidBatch(Y, sig, glab, cand, W, H, n, boxes, ids, bright, k1, hw, dk, offs) {
+  if (!named) return null;
   return call(() => {
     const y = asF32(Y), s = asF32(sig), I = Int32Array.from(ids);
-    const ab = N.solidBatch(y.buffer, y.byteOffset, s.buffer, s.byteOffset, glab.buffer, glab.byteOffset, cand.buffer, cand.byteOffset, W, H, n,
-      boxes.buffer, boxes.byteOffset, I.buffer, 0, bright ? 1 : 0, k1.buffer, k1.byteOffset, k1.length, hw.pack.buffer, 0, hw.start.buffer, 0, dk,
-      offs.buffer, offs.byteOffset);
+    const res = N.solidBatch({ Y: ab(y), sig: ab(s), glab: ab(glab), cand: ab(cand), W, H, n, boxes: ab(boxes), ids: ab(I), bright: bright ? 1 : 0,
+      k1: ab(k1), k1n: k1.length, hwPack: ab(hw.pack), hwStart: ab(hw.start), dk, offs: ab(offs) });
     const tot = offs[n], pad = (8 - ((2 * tot) % 8)) % 8, b = 2 * tot + pad;
-    return { solid: new Uint8Array(ab, 0, tot), objd: new Uint8Array(ab, tot, tot), how: new Int32Array(ab, b, n), area: new Int32Array(ab, b + 4 * n, n), width: new Float64Array(ab, b + 8 * n, n) };
+    return { solid: new Uint8Array(res, 0, tot), objd: new Uint8Array(res, tot, tot), how: new Int32Array(res, b, n), area: new Int32Array(res, b + 4 * n, n), width: new Float64Array(res, b + 8 * n, n) };
   });
 }
 
 function cuesBatch(Y, G3, E25, E1, sig, cand, cgi, cidx, W, H, n, boxes, offs, objd, bright, gradCal, k1, k3, hw) {
+  if (!named) return null;
   return call(() => {
-    const y = asF32(Y), g3 = asF32(G3), e25 = asF32(E25), e1 = E1 ? asF32(E1) : new Float32Array(1), s = asF32(sig);
-    const gi = cgi.length ? cgi : new Int32Array(1), ix = cidx.length ? cidx : new Int32Array(1);
-    return new Float64Array(N.cuesBatch(y.buffer, y.byteOffset, g3.buffer, g3.byteOffset, e25.buffer, e25.byteOffset, e1.buffer, e1.byteOffset, E1 ? 1 : 0,
-      s.buffer, s.byteOffset, cand.buffer, cand.byteOffset, gi.buffer, gi.byteOffset, ix.buffer, ix.byteOffset, cgi.length, W, H, n,
-      boxes.buffer, boxes.byteOffset, offs.buffer, offs.byteOffset, objd.buffer, objd.byteOffset, bright ? 1 : 0, gradCal,
-      k1.buffer, k1.byteOffset, k1.length, k3.buffer, k3.byteOffset, k3.length, hw.pack.buffer, 0, hw.start.buffer, 0));
+    const y = asF32(Y), g3 = asF32(G3), e25 = asF32(E25), s = asF32(sig);
+    return new Float64Array(N.cuesBatch({ Y: ab(y), G3: ab(g3), E25: ab(e25), E1: E1 ? ab(asF32(E1)) : null, sig: ab(s), cand: ab(cand),
+      cgi: ab(cgi), cidx: ab(cidx), nc: cgi.length, W, H, n, boxes: ab(boxes), offs: ab(offs), objd: ab(objd), bright: bright ? 1 : 0, gradCal,
+      k1: ab(k1), k1n: k1.length, k3: ab(k3), k3n: k3.length, hwPack: ab(hw.pack), hwStart: ab(hw.start) }));
   });
 }
 
 // detect.js judgeSoft's measurements for every seed (soft.cpp). seeds: Int32Array n x 7 (gy, gx, 0, W0 y0, y1, x0, x1).
 // Returns { fixed: Float64Array n x 24, list(i, j): Int32Array (j 0 own region, 1 whole object, 2 fill) }.
 function softBatch(Y, sig, img, C, Ci, W, H, bright, n, seeds, k15, k08, k25, softFill, socketOn) {
+  if (!named) return null;
   return call(() => {
     const y = asF32(Y), s = asF32(sig);
-    const ab = N.softBatch(y.buffer, y.byteOffset, s.buffer, s.byteOffset, img.buffer, img.byteOffset, C, Ci, W, H, bright ? 1 : 0, n,
-      seeds.buffer, seeds.byteOffset, k15.buffer, k15.byteOffset, k15.length, k08.buffer, k08.byteOffset, k08.length, k25.buffer, k25.byteOffset, k25.length,
-      softFill, socketOn ? 1 : 0);
-    const fixed = new Float64Array(ab, 0, n * 24), no = 3 * n + 1, offBytes = Math.ceil((no * 4) / 8) * 8;
-    const offs = new Int32Array(ab, n * 24 * 8, no), data = new Int32Array(ab, n * 24 * 8 + offBytes, offs[no - 1]);
+    const res = N.softBatch({ Y: ab(y), sig: ab(s), img: ab(img), C, Ci, W, H, bright: bright ? 1 : 0, n, seeds: ab(seeds),
+      k15: ab(k15), k15n: k15.length, k08: ab(k08), k08n: k08.length, k25: ab(k25), k25n: k25.length, softFill, socketOn: socketOn ? 1 : 0 });
+    const fixed = new Float64Array(res, 0, n * 24), no = 3 * n + 1, offBytes = Math.ceil((no * 4) / 8) * 8;
+    const offs = new Int32Array(res, n * 24 * 8, no), data = new Int32Array(res, n * 24 * 8 + offBytes, offs[no - 1]);
     return { fixed, list: (i, j) => data.subarray(offs[3 * i + j], offs[3 * i + j + 1]) };
   });
 }
@@ -339,7 +370,8 @@ function averageStrip(src, srcW, rows, C, k, dst, Wd, yd0, eight) {
 }
 
 module.exports = {
-  ready: () => readyP, available: () => !!N, loadError: () => loadError, big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
+  ready: () => readyP, available: () => !!N, loadError: () => loadError,
+  note: () => (N && !named ? "named-field calls unavailable here: five steps run in JS" : ""), big, threads: (n) => (N ? N.threads(n || 0) : 0), ridgeMaps, rectMorph, averageStrip, fillHoles, solidBatch, cuesBatch, netForwardAt, hypotInto, blobTiles, skeletonize, softBatch,
   median8f, ellipse, sepConv, box3, boxBlur, sobel, netLoad, netForward,
-  blockStats, noiseByLevel, zMaps, npGradient, resizeLinear, label, binMorph, outsideMask,
+  blockStats, noiseByLevel, zMaps, zMapsInto, npGradient, resizeLinear, label, binMorph, outsideMask,
 };

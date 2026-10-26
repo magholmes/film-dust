@@ -59,5 +59,7 @@ if (!flag("--detect-only")) writeNpy(path.join(outDir, `${stem}_clean.npy`), dat
 fs.writeFileSync(path.join(outDir, `${stem}_report.json`), JSON.stringify({ summary: res.stats, marks: res.marks }));
 console.log("RESULT " + JSON.stringify(res.stats));
 const mem = process.memoryUsage();
-console.log(`peak-ish memory: rss ${(mem.rss / 2 ** 30).toFixed(1)} GB, array buffers ${(mem.arrayBuffers / 2 ** 30).toFixed(1)} GB`);
+console.log(`memory: peak ${(process.resourceUsage().maxRSS / 2 ** 20).toFixed(2)} GB, now rss ${(mem.rss / 2 ** 30).toFixed(1)} GB, array buffers ${(mem.arrayBuffers / 2 ** 30).toFixed(1)} GB`);
+const NAT = require("../engine/native");
+console.log(`native: ${NAT.available() ? "on" : "off"}${NAT.loadError() ? " (" + NAT.loadError() + ")" : ""}`);
 })().catch((e) => { console.error(e); process.exit(1); });
