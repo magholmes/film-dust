@@ -90,7 +90,10 @@ const clock = (ms) => {
 };
 const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
-$("remove").addEventListener("click", run);
+$("remove").addEventListener("click", () => run());
+// the engine couldn't tell a negative from a slide and healed nothing: the user says which
+$("as-negative").addEventListener("click", () => run("bright"));
+$("as-slide").addEventListener("click", () => run("dark"));
 
 // ---------- Photoshop I/O -------------------------------------------------------------------
 
@@ -439,9 +442,11 @@ function setBusy(on) {
   busy = on;
   $("remove").disabled = on;
   $("remove").textContent = on ? "Removing…" : "Remove dust";
+  if (on) $("choice").hidden = true;
 }
 
-async function run() {
+// polarity: "bright" (a negative) or "dark" (a slide) when the user said which; otherwise the engine works it out
+async function run(polarity) {
   if (busy) return;
   const doc = app.activeDocument;
   if (!doc) return status("open a scan first", "error");
@@ -473,7 +478,7 @@ async function run() {
       words = "finding the subject"; show();
       subject = await readSubject(ctx, doc, src, tick);
       const span = big ? 0.72 : 0.9;
-      result = await cleanScan(src.img, src.W, src.H, src.C, Object.assign({ heal: true, subject, scanMp: (W * H) / 1e6 }, SETTINGS), {
+      result = await cleanScan(src.img, src.W, src.H, src.C, Object.assign({ heal: true, subject, scanMp: (W * H) / 1e6 }, SETTINGS, polarity ? { polarity } : {}), {
         tick, progress: (f, w) => { frac = 0.08 + span * f; words = big ? w.replace(/^healing/, "healing a working copy") : w; },
       });
       if (!result.stats.healed) return;   // nothing found: the document stays exactly as it was
@@ -514,6 +519,13 @@ async function run() {
   showEngine();
   recordEngine();
   const s = result.stats;
+  // too little dust either way to tell a negative from a slide: nothing healed, the user picks
+  if (!s.healed && !polarity && !(s.polarity || []).length) {
+    $("results").hidden = true;
+    $("choice").hidden = false;
+    try { $("as-negative").focus(); } catch (e) { /* older hosts */ }
+    return status("couldn’t tell a negative from a slide · nothing was changed", "done");
+  }
   $("results").hidden = false;
   $("r-healed").textContent = thousands(s.healed);
   $("r-hairs").textContent = thousands(s.hairs);
@@ -528,7 +540,8 @@ async function run() {
   // fibres among the faint discs
   const nf = (s.fibres || 0) + (s.soft_fibres_tinted || 0) + (s.discs_fibre || 0);
   // a small scan (a lab scan, a web copy) gets the careful rules (maps.js res_guard): say so, with its size
-  const note = (nf ? ` · ${nf} fibre${nf > 1 ? "s" : ""} of the scan’s own dust colour` : "")
+  const note = (polarity ? ` · treated as a ${polarity === "dark" ? "slide" : "negative"}` : "")
+    + (nf ? ` · ${nf} fibre${nf > 1 ? "s" : ""} of the scan’s own dust colour` : "")
     + (s.small_scan ? ` · small scan (${s.small_scan} MP): only clear dust is taken` : "");
   if (!s.healed) status("no dust found · nothing was changed" + note, "done");
   else if (s.doubtful && !result.doubtLayerFailed) status(`${thousands(s.healed)} marks healed · ${s.doubtful} doubtful ringed on the hidden layer “doubtful spots” · paint black on the “dust removed” mask to bring one back` + note, "done");
@@ -543,7 +556,7 @@ function describe(e) {
 }
 
 try {
-  action.addNotificationListener(["select", "open", "close", "make"], () => { if (!busy) idleStatus(); });
+  action.addNotificationListener(["select", "open", "close", "make"], () => { if (!busy) { $("choice").hidden = true; idleStatus(); } });
 } catch (e) { /* older hosts: the idle line updates on the next run */ }
 idleStatus();
 

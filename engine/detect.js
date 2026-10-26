@@ -2120,10 +2120,12 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
   // 4 dark with no bright). Judged by the original scan's size, like the small-scan rules.
   const scanMpPol = Math.max((W * H) / 1e6, p.res_scan_mp || 0);
   const darkNeedOf = (nb) => Math.max(Math.max(p.polarity_need_min, p.polarity_need * Math.min(1, scanMpPol / p.polarity_need_mp)), 2 * nb, scanMpPol < p.polarity_need_mp ? nb + p.polarity_lead : 0);
+  // too few strong bright marks: dark is judged in full, its count of marks may be needed below
+  const weakOf = (nb) => p.polarity_weak > 0 && nb < p.polarity_weak;
   for (const b of pols) {
     stage(b ? "white" : "black");
     // find() stops judging dark early when it can't reach the need
-    ctx.darkNeed = !b && p.polarity === "auto" && p.polarity_stop !== false && results.has(true) ? darkNeedOf(results.get(true).strong) : 0;
+    ctx.darkNeed = !b && p.polarity === "auto" && p.polarity_stop !== false && results.has(true) && !weakOf(results.get(true).strong) ? darkNeedOf(results.get(true).strong) : 0;
     ctx.lastMaps = b === pols[pols.length - 1];
     results.set(b, await find(ctx, b));
     ctx.darkNeed = 0;
@@ -2132,8 +2134,17 @@ async function detect(img, W, H, C, opts = {}, hooks = {}) {
   let use;
   if (p.polarity === "auto" && results.size === 2) {
     const nb = results.get(true).strong, nd = results.get(false).strong;
-    use = nd >= darkNeedOf(nb) ? [false] : [true];
-    log(`auto polarity: strong isolated bright=${nb} dark${results.get(false).stopped ? " at most" : ""}=${nd} -> ${use.map((b) => (b ? "bright" : "dark"))}`);
+    let more = "";
+    if (nd >= darkNeedOf(nb)) use = [false];
+    else if (!weakOf(nb)) use = [true];
+    else {
+      // too few strong marks either way: the side whose judging found clearly more marks, or neither
+      const hb = results.get(true).n, hd = results.get(false).n;
+      const kb = hb >= p.polarity_many ? p.polarity_ratio_many : p.polarity_ratio;
+      use = hb >= p.polarity_min && hb + 1 >= kb * (hd + 1) ? [true] : hd >= p.polarity_min && hd + 1 >= p.polarity_ratio * (hb + 1) ? [false] : [];
+      more = `; marks found bright=${hb} dark=${hd}`;
+    }
+    log(`auto polarity: strong isolated bright=${nb} dark${results.get(false).stopped ? " at most" : ""}=${nd}${more} -> ${use.length ? use.map((b) => (b ? "bright" : "dark")) : "can't tell, nothing healed"}`);
   } else use = [...results.keys()];
   for (const b of results.keys()) if (!use.includes(b)) results.get(b).maps = null;
   if (p.soft_path) {

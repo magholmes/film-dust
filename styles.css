@@ -123,6 +123,11 @@ body {
 .figure { color: var(--ink); font-variant-numeric: tabular-nums; }
 .results[hidden] { display: none; }
 
+/* asked only when the scan couldn't tell a negative from a slide: two edged buttons sharing the row */
+.choice[hidden] { display: none; }
+.choice .actions { flex-wrap: wrap; padding-top: 8px; }
+.choice .btn { flex: 1 1 0; }
+
 /* updates: a quiet line above the status; the panel goes online only when it is clicked */
 .updates { margin: 0 var(--gutter); padding: 4px 0; }
 .link {

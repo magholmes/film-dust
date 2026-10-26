@@ -209,7 +209,7 @@ async function cleanScan(img, W, H, C, opts = {}, hooks = {}) {
     report("heal", 0);
     await heal(img, W, H, C, r1.mask, r1.outside, (f) => report("heal", f), tick);
     const pol = r1.polarities.length === 1 ? r1.polarities[0] : "both";
-    for (let n = 2; n <= passes; n++) {
+    for (let n = 2; n <= passes && r1.polarities.length; n++) {
       pass = n;
       // skin texture left in the first pass and the heals the scene model called picture stay as they are
       const skin = marks.filter((m) => m.verdict === "keep-photo" && (m.why || "").startsWith("on skin")).map((m) => [m.cx, m.cy])

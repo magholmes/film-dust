@@ -2,7 +2,8 @@
 // Runs panel.js end to end in node against a mock of Photoshop's UXP API (photoshop + uxp modules and
 // a tiny DOM): Remove dust on a synthetic 16-bit scan with dust, then check for updates. Catches code errors in the
 // panel's flow; it can't prove that Photoshop accepts each call (only Photoshop can).
-//   node test/panel_mock.js      (MOCK_K=2: the big-scan path · MOCK_SMALL=1: judged as the small scan it is)
+//   node test/panel_mock.js      (MOCK_K=2: the big-scan path · MOCK_SMALL=1: judged as the small scan it is ·
+//   MOCK_PLAIN=1: a scan with no dust, where the panel asks negative or slide)
 const fs = require("fs"), os = require("os"), path = require("path"), Module = require("module");
 
 // ---------- a synthetic scan: grain, a gradient, specks, a hair --------------------------------
@@ -13,13 +14,15 @@ let seed = 7;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
   let v = 0.35 + 0.15 * Math.sin(x / 140) * Math.cos(y / 170) + (rnd() - 0.5) * 0.025;
-  for (const [sx, sy, r] of [[150, 120, 3], [600, 300, 2], [420, 560, 4], [800, 90, 2.5]]) if ((x - sx) ** 2 + (y - sy) ** 2 < r * r) v = 0.92;
-  if (Math.abs((y - 400) - 0.5 * (x - 300)) < 1.3 && x > 250 && x < 420) v = 0.88;
+  if (!process.env.MOCK_PLAIN) {
+    for (const [sx, sy, r] of [[150, 120, 3], [600, 300, 2], [420, 560, 4], [800, 90, 2.5]]) if ((x - sx) ** 2 + (y - sy) ** 2 < r * r) v = 0.92;
+    if (Math.abs((y - 400) - 0.5 * (x - 300)) < 1.3 && x > 250 && x < 420) v = 0.88;
+  }
   // a patch of plain sky with a faint soft disc on it (out-of-focus dust, ~2% over the sky): the faint-disc finder's
   if (x >= 620 && y >= 430) {
     v = 0.45 + (rnd() - 0.5) * 0.025;
     const [dx0, dy0] = process.env.MOCK_K ? [1300, 1000] : [760, 565];   // well inside the plain patch
-    v += 0.012 * Math.exp(-((x - dx0) ** 2 + (y - dy0) ** 2) / (2 * 34 * 34));   // soft, like real ones (big enough to be found at half size too)
+    if (!process.env.MOCK_PLAIN) v += 0.012 * Math.exp(-((x - dx0) ** 2 + (y - dy0) ** 2) / (2 * 34 * 34));   // soft, like real ones (big enough to be found at half size too)
   }
   for (let c = 0; c < C; c++) img[(y * W + x) * C + c] = Math.round(Math.min(1, v * (c === 1 ? 1.0 : 0.95)) * 65535);
 }
@@ -153,6 +156,14 @@ Module._load = function (req, parent, isMain) {
   console.log("engine:", require(path.join(ROOT, "engine", "native")).available() ? "native" : "plain JS", "· version line:", global.document.getElementById("version").textContent);
   const $ = (id) => global.document.getElementById(id);
   await $("remove").handlers.click();
+  // no dust: nothing to tell a negative from a slide by, so the panel asks; answering runs it as that
+  if (process.env.MOCK_PLAIN) {
+    console.log("status:", $("status").textContent, "· question", $("choice").hidden ? "hidden" : "shown", "· results", $("results").hidden ? "hidden" : "shown");
+    if ($("choice").hidden) { console.log("PLAIN SCAN: NO QUESTION"); process.exitCode = 1; return; }
+    await $("as-slide").handlers.click();
+    console.log("as a slide:", $("status").textContent, "· question", $("choice").hidden ? "hidden" : "shown", "· layers:", doc.layers.map((l) => l.name).join(", "));
+    return;
+  }
   const dust = doc.layers.find((l) => l.name === "dust removed"), doubt = doc.layers.find((l) => l.name === "doubtful spots");
   console.log("status:", $("status").textContent);
   console.log("results:", ["r-healed", "r-hairs", "r-soft", "r-discs", "r-kept", "r-doubt", "r-subject", "r-scale"].map((k) => `${k.slice(2)} ${$(k).textContent}`).join(" · "));

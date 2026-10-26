@@ -25,6 +25,16 @@ const DEFAULTS = {
   // on the border 4-6: Man's two on his top border stay healed)
   frame_guard: true, frame_ring: 0.4, frame_margin: 4, frame_area: 200, frame_width: 8,
   polarity_need: 15, polarity_need_mp: 24, polarity_need_min: 5, polarity_lead: 3,
+  // too little to go on (under polarity_weak strong bright marks, too few dark ones to win): both sides are judged in
+  // full and one is used only when it finds polarity_ratio times the other's marks, and polarity_min or more (bright,
+  // the old default: polarity_ratio_many times once it has polarity_many marks); otherwise nothing is healed and the
+  // panel asks negative or slide. Before, all these scans were cleaned as negatives: FILM-R's slides with 0-2 strong
+  // marks either way lost their highlights (velvia50_half_1, a crane's lights: -9.9 dB). On FILM-R this keeps all 20
+  // weak negatives (2x-300x more found as bright), cleans 4 weak slides as slides (+3.7 and +4.8 dB on two) and leaves
+  // the crane (26 bright, 43 dark) and one Provia (6, 15). On web copies of film (few marks, mostly picture) 2x for dark
+  // turned 3 negatives dark (14 vs 32, 6 vs 14, 2 vs 7) and 2x for bright kept a Velvia bright (12 vs 4); his own weak
+  // scans u_jess and ya find 5x more as bright. 0 = the old default to bright
+  polarity_weak: 5, polarity_ratio: 3, polarity_min: 5, polarity_ratio_many: 2, polarity_many: 20,
   scene: true, scene_veto: -2.0, scene_add: 4.0, scene_add_mp: 1.5, straight_max: 0.012, straight_len: 150, soft_crisp: 0.72, strong_crisp: 0.40,
   paper_white: 0.75, detail_max: 1.2, tex_min: 0.45, detail_crisp: 0.9, detail_gain: 1.2, broad_min: 0.3,
   // taught by Magnus's answers (2026-10-16): strong specks beside dark edges, strong crisp specks on skin

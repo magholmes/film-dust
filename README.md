@@ -41,7 +41,7 @@ Where the crops came from.
 
 ## What it removes
 
-- White specks on scanned negatives and black specks on slides. It works out which one you've got.
+- White specks on scanned negatives and black specks on slides. It works out which one you've got, and if there's too little dust to tell, it asks.
 - Hairs and fibres.
 - Soft, out-of-focus dust, including the faint circles you get in skies.
 

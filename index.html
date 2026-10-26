@@ -18,6 +18,14 @@
       <button class="btn btn--wide" id="remove">Remove dust</button>
     </div>
 
+    <div class="choice" id="choice" hidden>
+      <p class="lede">It couldn’t tell if this scan is a negative or a slide, so nothing was changed. Which is it?</p>
+      <div class="actions">
+        <button class="btn btn--edge" id="as-negative">It’s a negative</button>
+        <button class="btn btn--edge" id="as-slide">It’s a slide</button>
+      </div>
+    </div>
+
     <div class="results" id="results" hidden>
       <div class="result"><span class="label">healed</span><span class="figure" id="r-healed">0</span></div>
       <div class="result"><span class="label">hairs</span><span class="figure" id="r-hairs">0</span></div>
